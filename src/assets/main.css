@@ -831,7 +831,6 @@ a {
 
 .fs-sidebar .ant-menu,
 .page-body--scroll,
-.workbench-columns .section-card__body,
 .jcc-table .ant-table-content,
 .jcc-table .ant-table-body {
   scrollbar-width: thin;
@@ -840,7 +839,6 @@ a {
 
 .fs-sidebar .ant-menu::-webkit-scrollbar,
 .page-body--scroll::-webkit-scrollbar,
-.workbench-columns .section-card__body::-webkit-scrollbar,
 .jcc-table .ant-table-content::-webkit-scrollbar,
 .jcc-table .ant-table-body::-webkit-scrollbar {
   width: 8px;
@@ -849,7 +847,6 @@ a {
 
 .fs-sidebar .ant-menu::-webkit-scrollbar-thumb,
 .page-body--scroll::-webkit-scrollbar-thumb,
-.workbench-columns .section-card__body::-webkit-scrollbar-thumb,
 .jcc-table .ant-table-content::-webkit-scrollbar-thumb,
 .jcc-table .ant-table-body::-webkit-scrollbar-thumb {
   background: #c3cada;
@@ -858,7 +855,6 @@ a {
 
 .fs-sidebar .ant-menu::-webkit-scrollbar-track,
 .page-body--scroll::-webkit-scrollbar-track,
-.workbench-columns .section-card__body::-webkit-scrollbar-track,
 .jcc-table .ant-table-content::-webkit-scrollbar-track,
 .jcc-table .ant-table-body::-webkit-scrollbar-track {
   background: transparent;
@@ -979,81 +975,42 @@ a {
   padding-right: 4px;
 }
 
-/* 工作台：统计卡固定，下面的每张卡片高度由剩余空间分配，卡片内部滚动。 */
+/* 工作台统一由内容区滚动，卡片按实际内容撑开，避免窄屏时入口被裁切。 */
 .workbench-page {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  overflow: hidden;
-}
-
-.workbench-page > .stat-grid {
-  flex: 0 0 auto;
+  min-width: 0;
 }
 
 .workbench-columns {
-  flex: 1 1 auto;
-  min-height: 0;
-  align-items: stretch;
+  align-items: start;
 }
 
 .workbench-columns > .section-card,
 .workbench-columns .section-card {
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.workbench-columns .section-card__header {
-  flex: 0 0 auto;
-}
-
-.workbench-columns .section-card__body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  min-width: 0;
 }
 
 .workbench-side {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
-}
-
-.workbench-side > .section-card {
-  flex: 1 1 0;
-}
-
-.workbench-side .notice-list {
-  min-height: 0;
+  min-width: 0;
 }
 
 @media (max-width: 1100px) {
-  .workbench-page {
-    overflow-y: auto;
-    padding-right: 4px;
+  .workbench-columns .quick-links {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+}
 
-  .workbench-columns {
-    flex: 0 0 auto;
+@media (max-width: 760px) {
+  .workbench-columns .quick-links {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .workbench-columns .quick-links {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .workbench-columns .section-card {
-    min-height: 260px;
-  }
-
-  .workbench-columns .section-card__body {
-    overflow-y: visible;
-  }
-
-  .workbench-side {
-    flex: 0 0 auto;
   }
 }
 

@@ -73,7 +73,7 @@ onMounted(load)
       </a-space>
     </template>
 
-    <PageBody mode="fill" label="工作台内容">
+    <PageBody mode="scroll" label="工作台内容">
       <a-skeleton v-if="loading" active :paragraph="{ rows: 10 }" />
 
       <a-result v-else-if="errorText" status="warning" title="工作台加载失败" :sub-title="errorText">
