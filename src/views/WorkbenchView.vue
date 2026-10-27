@@ -172,112 +172,108 @@ onMounted(load)
         </template>
 
         <template v-else>
-          <div class="two-column workbench-columns">
-            <div class="page-stack workbench-side">
-              <section class="section-card">
-                <div class="section-card__header">
-                  <div class="section-card__title">逾期提醒</div>
-                  <a-button type="link" @click="router.push('/staff/fees')">费用处理</a-button>
-                </div>
-                <div class="section-card__body">
-                  <a-empty v-if="!data.alerts?.overdue?.length" description="当前没有逾期借阅" />
-                  <a-table
-                    v-else
-                    size="small"
-                    :pagination="false"
-                    :data-source="data.alerts.overdue"
-                    row-key="id"
-                    :scroll="{ x: 560 }"
-                  >
-                    <a-table-column title="图书" data-index="bookTitle" key="bookTitle" />
-                    <a-table-column title="读者" key="reader">
-                      <template #default="{ record }">
-                        {{ record.readerName }}（{{ record.readerNo }}）
-                      </template>
-                    </a-table-column>
-                    <a-table-column title="条码" data-index="barcode" key="barcode" />
-                    <a-table-column title="应还日期" key="dueAt">
-                      <template #default="{ record }">
-                        <span class="text-danger">
-                          {{ formatDateTime(record.dueAt, { dateOnly: true }) }}
-                        </span>
-                      </template>
-                    </a-table-column>
-                  </a-table>
-                </div>
-              </section>
-
-              <section class="section-card">
-                <div class="section-card__header">
-                  <div class="section-card__title">馆内公告</div>
-                  <a-button type="link" @click="router.push('/announcements')">查看全部</a-button>
-                </div>
-                <div class="section-card__body">
-                  <a-empty v-if="!data.announcements?.length" description="暂无公告" />
-                  <ul v-else class="notice-list">
-                    <li v-for="notice in data.announcements" :key="notice.id" class="notice-item">
-                      <div>
-                        <div class="notice-item__title">{{ notice.title }}</div>
-                        <div class="notice-item__content">{{ notice.content }}</div>
-                      </div>
-                      <span class="notice-item__date">
-                        {{ formatDateTime(notice.publishedAt, { dateOnly: true }) }}
+          <div class="workbench-dashboard">
+            <section class="section-card workbench-dashboard__overdue">
+              <div class="section-card__header">
+                <div class="section-card__title">逾期提醒</div>
+                <a-button type="link" @click="router.push('/staff/fees')">费用处理</a-button>
+              </div>
+              <div class="section-card__body">
+                <a-empty v-if="!data.alerts?.overdue?.length" description="当前没有逾期借阅" />
+                <a-table
+                  v-else
+                  size="small"
+                  :pagination="false"
+                  :data-source="data.alerts.overdue"
+                  row-key="id"
+                  :scroll="{ x: 560 }"
+                >
+                  <a-table-column title="图书" data-index="bookTitle" key="bookTitle" />
+                  <a-table-column title="读者" key="reader">
+                    <template #default="{ record }">
+                      {{ record.readerName }}（{{ record.readerNo }}）
+                    </template>
+                  </a-table-column>
+                  <a-table-column title="条码" data-index="barcode" key="barcode" />
+                  <a-table-column title="应还日期" key="dueAt">
+                    <template #default="{ record }">
+                      <span class="text-danger">
+                        {{ formatDateTime(record.dueAt, { dateOnly: true }) }}
                       </span>
-                    </li>
-                  </ul>
-                </div>
-              </section>
-            </div>
+                    </template>
+                  </a-table-column>
+                </a-table>
+              </div>
+            </section>
 
-            <div class="page-stack workbench-side">
-              <section class="section-card">
-                <div class="section-card__header">
-                  <div class="section-card__title">预约待取</div>
-                  <a-button type="link" @click="router.push('/staff/reservations')">处理</a-button>
-                </div>
-                <div class="section-card__body">
-                  <a-empty v-if="!data.alerts?.readyReservations?.length" description="暂无待取预约" />
-                  <div v-else class="notice-list">
-                    <div
-                      v-for="item in data.alerts.readyReservations"
-                      :key="item.id"
-                      class="notice-item"
-                    >
-                      <div>
-                        <div class="notice-item__title">{{ item.bookTitle }}</div>
-                        <div class="muted small">
-                          {{ item.readerName }} · {{ item.copyBarcode || '副本待分配' }}
-                        </div>
-                      </div>
-                      <span class="notice-item__date">
-                        保留至 {{ formatDateTime(item.pickupExpiresAt, { dateOnly: true }) }}
-                      </span>
+            <section class="section-card workbench-dashboard__announcements">
+              <div class="section-card__header">
+                <div class="section-card__title">馆内公告</div>
+                <a-button type="link" @click="router.push('/announcements')">查看全部</a-button>
+              </div>
+              <div class="section-card__body">
+                <a-empty v-if="!data.announcements?.length" description="暂无公告" />
+                <ul v-else class="notice-list">
+                  <li v-for="notice in data.announcements" :key="notice.id" class="notice-item">
+                    <div>
+                      <div class="notice-item__title">{{ notice.title }}</div>
+                      <div class="notice-item__content">{{ notice.content }}</div>
                     </div>
-                  </div>
-                </div>
-              </section>
+                    <span class="notice-item__date">
+                      {{ formatDateTime(notice.publishedAt, { dateOnly: true }) }}
+                    </span>
+                  </li>
+                </ul>
+              </div>
+            </section>
 
-              <section class="section-card">
-                <div class="section-card__header">
-                  <div class="section-card__title">快捷办理</div>
-                </div>
-                <div class="section-card__body">
-                  <div class="quick-links">
-                    <button
-                      v-for="link in quickLinks"
-                      :key="link.key"
-                      type="button"
-                      class="quick-link"
-                      @click="router.push({ name: link.key })"
-                    >
-                      <component :is="link.icon" class="quick-link__icon" />
-                      <strong>{{ link.label }}</strong>
-                      <span>{{ link.note }}</span>
-                    </button>
+            <section class="section-card workbench-dashboard__reservations">
+              <div class="section-card__header">
+                <div class="section-card__title">预约待取</div>
+                <a-button type="link" @click="router.push('/staff/reservations')">处理</a-button>
+              </div>
+              <div class="section-card__body">
+                <a-empty v-if="!data.alerts?.readyReservations?.length" description="暂无待取预约" />
+                <div v-else class="notice-list">
+                  <div
+                    v-for="item in data.alerts.readyReservations"
+                    :key="item.id"
+                    class="notice-item"
+                  >
+                    <div>
+                      <div class="notice-item__title">{{ item.bookTitle }}</div>
+                      <div class="muted small">
+                        {{ item.readerName }} · {{ item.copyBarcode || '副本待分配' }}
+                      </div>
+                    </div>
+                    <span class="notice-item__date">
+                      保留至 {{ formatDateTime(item.pickupExpiresAt, { dateOnly: true }) }}
+                    </span>
                   </div>
                 </div>
-              </section>
-            </div>
+              </div>
+            </section>
+
+            <section class="section-card workbench-dashboard__shortcuts">
+              <div class="section-card__header">
+                <div class="section-card__title">快捷办理</div>
+              </div>
+              <div class="section-card__body">
+                <div class="quick-links">
+                  <button
+                    v-for="link in quickLinks"
+                    :key="link.key"
+                    type="button"
+                    class="quick-link"
+                    @click="router.push({ name: link.key })"
+                  >
+                    <component :is="link.icon" class="quick-link__icon" />
+                    <strong>{{ link.label }}</strong>
+                    <span>{{ link.note }}</span>
+                  </button>
+                </div>
+              </div>
+            </section>
           </div>
         </template>
       </div>

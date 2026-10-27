@@ -1005,20 +1005,60 @@ a {
   min-width: 0;
 }
 
+.workbench-dashboard {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.9fr);
+  grid-template-areas:
+    'overdue reservations'
+    'announcements shortcuts';
+  gap: 16px;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.workbench-dashboard .section-card {
+  min-width: 0;
+}
+
+.workbench-dashboard__overdue { grid-area: overdue; }
+.workbench-dashboard__reservations { grid-area: reservations; }
+.workbench-dashboard__announcements { grid-area: announcements; }
+.workbench-dashboard__shortcuts { grid-area: shortcuts; }
+
+.workbench-dashboard__reservations .ant-empty-image {
+  height: 48px;
+}
+
+.workbench-dashboard__shortcuts .section-card__body {
+  padding: 14px 16px;
+}
+
+.workbench-dashboard .quick-links {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.workbench-dashboard .quick-link {
+  min-width: 0;
+  gap: 3px;
+  padding: 10px 12px;
+}
+
 @media (max-width: 1100px) {
-  .workbench-columns .quick-links {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .workbench-dashboard {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'overdue' 'reservations' 'announcements' 'shortcuts';
   }
 }
 
 @media (max-width: 760px) {
-  .workbench-columns .quick-links {
+  .workbench-dashboard .quick-links {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 480px) {
-  .workbench-columns .quick-links {
+  .workbench-dashboard .quick-links {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -1103,6 +1143,7 @@ a {
   .page-body--fill,
   .workbench-page,
   .workbench-columns,
+  .workbench-dashboard,
   .two-column,
   .stat-grid,
   .jcc-table {
