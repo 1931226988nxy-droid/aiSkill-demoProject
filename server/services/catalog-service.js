@@ -2,6 +2,7 @@ import { AppError, ERR } from '../domain/errors.js'
 import { writeAudit } from '../lib/audit.js'
 import { paged, parsePaging } from '../lib/pagination.js'
 import { isUniqueConstraint, transaction } from '../lib/transaction.js'
+import { assignAvailableCopies } from './reservation-queue.js'
 import {
   enumValue,
   escapeLike,
@@ -154,7 +155,12 @@ function resolveBookInput(db, input, existing = null) {
   }
 }
 
-export function createCatalogService({ db, clock = () => new Date() }) {
+export function createCatalogService({ db, clock = () => new Date(), settings, notifications }) {
+  function assignReservations(bookId, operatorId) {
+    return assignAvailableCopies({
+      db, bookId, now: clock(), settings, notifications, operatorId,
+    })
+  }
   function listCategories() {
     return db
       .prepare(
@@ -514,6 +520,7 @@ export function createCatalogService({ db, clock = () => new Date() }) {
           ip,
           createdAt: now,
         })
+        if (status === 'available') assignReservations(book.id, actor.id)
         return mapCopy(db.prepare(`${COPY_SELECT} WHERE cp.id = ?`).get(copyId))
       })
     } catch (error) {
@@ -565,6 +572,7 @@ export function createCatalogService({ db, clock = () => new Date() }) {
           logInsert.run(copyId, actor.id, now)
           ids.push(copyId)
         }
+        assignReservations(book.id, actor.id)
         writeAudit(db, {
           actor,
           action: 'copy.bulk_import',
@@ -672,6 +680,7 @@ export function createCatalogService({ db, clock = () => new Date() }) {
         ip,
         createdAt: now,
       })
+      if (nextStatus === 'available') assignReservations(copy.bookId, actor.id)
       return getCopy(copyId)
     })
   }

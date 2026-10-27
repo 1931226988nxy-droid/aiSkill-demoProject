@@ -1,6 +1,7 @@
 import { AppError, ERR } from '../domain/errors.js'
 import { DEFAULT_SETTINGS } from '../domain/constants.js'
 import { integer, booleanValue } from '../lib/validation.js'
+import { transaction } from '../lib/transaction.js'
 
 const SETTING_MAP = new Map(DEFAULT_SETTINGS.map((item) => [item.key, item]))
 
@@ -34,7 +35,7 @@ export function createSettingsService({ db, clock = () => new Date() }) {
     }
     const entries = Object.entries(values)
     if (!entries.length) throw new AppError(ERR.VALIDATION, '没有需要保存的参数', 422)
-    for (const [key, raw] of entries) {
+    const validated = entries.map(([key, raw]) => {
       if (!SETTING_MAP.has(key)) {
         throw new AppError(ERR.VALIDATION, `未知参数：${key}`, 422, { fields: { [key]: '未知参数' } })
       }
@@ -51,13 +52,13 @@ export function createSettingsService({ db, clock = () => new Date() }) {
           })
         }
       }
-      const now = clock().toISOString()
-      db.prepare('UPDATE settings SET value = ?, updated_at = ? WHERE key = ?').run(
-        String(value),
-        now,
-        key,
-      )
-    }
+      return [key, String(value)]
+    })
+    const now = clock().toISOString()
+    transaction(db, () => {
+      const update = db.prepare('UPDATE settings SET value = ?, updated_at = ? WHERE key = ?')
+      for (const [key, value] of validated) update.run(value, now, key)
+    })
     return getAll()
   }
 

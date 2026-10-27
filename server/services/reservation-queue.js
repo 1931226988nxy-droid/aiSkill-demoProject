@@ -63,6 +63,36 @@ export function promoteNextReservation({
   return getReservationDetail(db, next.id)
 }
 
+/** 新入库或恢复可借时，用现有副本依次满足等待队列。调用方负责事务。 */
+export function assignAvailableCopies({
+  db,
+  bookId,
+  now = new Date(),
+  settings,
+  notifications,
+  operatorId = null,
+}) {
+  const book = db.prepare('SELECT status FROM books WHERE id = ?').get(bookId)
+  if (book?.status !== 'active') return []
+  const copies = db
+    .prepare("SELECT id FROM copies WHERE book_id = ? AND status = 'available' ORDER BY id")
+    .all(bookId)
+  const assigned = []
+  for (const copy of copies) {
+    const reservation = promoteNextReservation({
+      db, bookId, copyId: copy.id, now, settings, notifications,
+    })
+    if (!reservation) break
+    db.prepare(
+      `INSERT INTO copy_status_logs
+        (copy_id, from_status, to_status, reason, operator_id, created_at)
+       VALUES (?, 'available', 'reserved', ?, ?, ?)`,
+    ).run(copy.id, `分配给预约读者 ${reservation.reader_no}`, operatorId, now.toISOString())
+    assigned.push(reservation)
+  }
+  return assigned
+}
+
 /** 取消/过期/放弃取书时，释放副本并按队列顺延。 */
 export function releaseReservation({
   db,

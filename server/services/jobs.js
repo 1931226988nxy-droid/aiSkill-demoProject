@@ -1,7 +1,7 @@
 import { writeAudit } from '../lib/audit.js'
 import { transaction } from '../lib/transaction.js'
 import { endOfShanghaiDayAfter, overdueDays, toShanghaiDateString, toShanghaiDateTimeString } from '../lib/time.js'
-import { releaseReservation } from './reservation-queue.js'
+import { assignAvailableCopies, releaseReservation } from './reservation-queue.js'
 
 export function runAutomatedJobs({
   db,
@@ -17,6 +17,7 @@ export function runAutomatedJobs({
     overdueNotices: 0,
     dueSoonNotices: 0,
     expiredReservations: 0,
+    assignedReservations: 0,
     expiredSessions: 0,
   }
 
@@ -104,6 +105,19 @@ export function runAutomatedJobs({
       })
     })
     result.expiredReservations += 1
+  }
+
+  const waitingBooks = db.prepare(
+    `SELECT DISTINCT r.book_id FROM reservations r
+     JOIN books b ON b.id = r.book_id
+     WHERE r.status = 'waiting' AND b.status = 'active'
+       AND EXISTS (SELECT 1 FROM copies cp
+         WHERE cp.book_id = r.book_id AND cp.status = 'available')`,
+  ).all()
+  for (const { book_id: bookId } of waitingBooks) {
+    result.assignedReservations += transaction(db, () =>
+      assignAvailableCopies({ db, bookId, now, settings, notifications }).length,
+    )
   }
 
   result.expiredSessions = Number(

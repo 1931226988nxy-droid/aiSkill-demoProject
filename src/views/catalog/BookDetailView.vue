@@ -75,7 +75,6 @@ onMounted(load)
   <JccPagePanel title="图书详情">
     <template #extra>
       <a-space wrap>
-        <a-button @click="router.back()">返回</a-button>
         <a-button
           v-if="auth.can('book.manage')"
           @click="router.push({ name: 'catalog-manage', query: { edit: book?.id } })"

@@ -119,6 +119,7 @@
 
 | 方法 | 路径 | 权限 | 说明 |
 | --- | --- | --- | --- |
+| GET | `/auth/options` | 公开 | 登录页选项：`allowRegistration`、`demoAccounts` |
 | POST | `/auth/login` | 公开 | 用户名密码登录 |
 | POST | `/auth/register` | 公开（受 `allow_registration` 控制） | 读者注册并登录 |
 | POST | `/auth/logout` | 登录 | 删除会话并清 Cookie |
@@ -285,7 +286,7 @@
 { "readerNo": "R20260001", "barcode": "LIB-01-001" }
 ```
 
-借书校验顺序：读者存在且启用 → 读者证未过期 → 无逾期在借 → 未达借阅上限 → 图书在架 → 同一读者未借同一书 → 副本可借或为本人预约保留 → 无其他预约队列优先权。通过后生成应还日期并发送站内通知。
+借书校验顺序：读者存在且启用 → 读者证未过期 → 无逾期在借 → 无未缴费用 → 未达借阅上限 → 图书在架 → 同一读者未借同一书 → 副本可借或为本人预约保留 → 无其他预约队列优先权。通过后生成应还日期并发送站内通知。
 
 还书请求：
 
@@ -320,6 +321,7 @@
 
 - 图书存在且在架；
 - 读者启用；
+- 读者证未过期；
 - 当前无该书的在借记录；
 - 同一读者同一书不能有重复 `waiting/ready` 预约（数据库部分唯一索引兜底）；
 - 当前有可借副本时不允许预约（提示直接借阅）。
@@ -343,7 +345,7 @@
 
 `action` 为 `settle` 或 `waive`。只有 `pending` 可处理；处理后不可重复操作。系统没有在线支付，不伪造支付成功。
 
-逾期费由任务按 `overdueDays × fine_per_day_cents` 计算，写入 `pending` 费用；管理员线下收款后标记 `settled`，或按制度 `waived`。
+逾期费由任务按 `overdueDays × fine_per_day_cents` 计算，写入 `pending` 费用；管理员线下收款后标记 `settled`，或按制度 `waived`。若在图书归还前结清或豁免，后续新增的逾期天数会生成补充待处理费用。读者有任何未缴费用时，借书校验返回 `PENDING_FEES_BLOCK`。
 
 ## 7. 读者
 
@@ -481,9 +483,10 @@
 后台可以动态创建菜单入口和授权，但不能凭空生成前端页面；这是权限/菜单动态化与低代码页面生成的区别。
 
 - 管理员角色拥有全部权限，不允许修改权限集；内置角色不可删除；有账号关联的角色不可删除。
+- 委派 `user.manage` 给非管理员角色后，该角色仍不能分配管理员角色、管理管理员账号、修改内置角色或授予超出自身的权限。
 - 系统参数：`library_name`、`loan_days`、`max_borrow`、`max_renewals`、`renewal_days`、`reservation_hold_days`、`fine_per_day_cents`、`due_soon_days`、`allow_registration`。
 - 审计日志只读，接口不提供修改/删除。
-- 任务扫描处理：逾期费用/通知、到期提醒、预约过期、过期会话清理。
+- 任务扫描处理：逾期费用/通知、到期提醒、预约过期、历史等待预约与可借副本的重新分配、过期会话清理。
 
 ## 11. 错误码
 
@@ -499,6 +502,7 @@
 | `CONFLICT` | 409 | 唯一约束或状态冲突 |
 | `BORROW_LIMIT` | 409 | 达到借阅上限 |
 | `OVERDUE_BLOCK` | 409 | 有逾期未还，禁止借书 |
+| `PENDING_FEES_BLOCK` | 409 | 有未缴费用，禁止借书 |
 | `COPY_NOT_AVAILABLE` | 409 | 副本不可借/已被借出 |
 | `COPY_RESERVED` | 409 | 副本/队列已被预约读者优先 |
 | `ALREADY_BORROWED_BOOK` | 409 | 同一读者已借同一书 |
@@ -512,7 +516,7 @@
 
 ## 12. 数据模型、索引与并发
 
-完整迁移见 `server/db/migrations/001_initial.sql` 与 `002_rbac_menus.sql`。
+完整迁移见 `server/db/migrations/001_initial.sql`、`002_rbac_menus.sql` 与 `003_overdue_fee_installments.sql`。
 
 主要实体：
 
@@ -544,7 +548,7 @@
 - `copies.barcode`（NOCASE）
 - `loans`：部分唯一索引 `UNIQUE(copy_id) WHERE returned_at IS NULL`，以及 `UNIQUE(reader_id, book_id) WHERE returned_at IS NULL`
 - `reservations`：部分唯一索引 `UNIQUE(reader_id, book_id) WHERE status IN ('waiting','ready')`
-- `fees`：部分唯一索引 `UNIQUE(loan_id, type) WHERE loan_id IS NOT NULL`
+- `fees`：部分唯一索引 `UNIQUE(loan_id, type) WHERE loan_id IS NOT NULL AND status = 'pending'`；同一借阅可保留多笔已结清/豁免历史费用
 - `notifications.dedupe_key`（非空时唯一）
 
 关键索引：菜单父级+排序，菜单启用状态，菜单权限权限外键，用户角色角色外键；其余业务索引同前。
@@ -567,4 +571,4 @@
 | `reader2` | `reader123` | 读者（李四，R20260002） |
 | `reader3` | `reader123` | 读者（王五，R20260003） |
 
-演示数据首次启动自动写入；删除 `data/library.db` 后重启会重新生成。默认菜单包含“工作台”“馆藏综合”“数据与公告”“系统管理”四个顶层入口。
+演示数据仅在开发模式首次启动空库时写入；删除开发数据库后重启会重新生成。生产模式空库首次启动必须提供 `INITIAL_ADMIN_PASSWORD`，只创建初始管理员并关闭自助注册。默认菜单包含“工作台”“馆藏综合”“数据与公告”“系统管理”四个顶层入口。

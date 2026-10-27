@@ -5,12 +5,14 @@ import { message } from 'ant-design-vue'
 import { JccAppShell } from '@jcc/shared/components'
 import {
   CheckOutlined,
+  ArrowLeftOutlined,
   LogoutOutlined,
   MenuOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { resolveMenuIcon } from '@/menu-icons'
+import { backDestination, findModuleForPath, modulePath } from '@/navigation'
 import NotificationBell from '@/components/NotificationBell.vue'
 
 const auth = useAuthStore()
@@ -26,22 +28,22 @@ watch(collapsed, (value) => {
 
 const items = computed(() =>
   (auth.navigation || []).map((item) => ({
-    key: item.path || `/modules/${item.code}`,
+    key: modulePath(item),
     label: item.title,
     icon: () => h(resolveMenuIcon(item.icon)),
   })),
 )
 
-function menuContains(node, targetPath) {
-  if (node.path === targetPath) return true
-  return (node.children || []).some((child) => menuContains(child, targetPath))
-}
-
 function findActiveKey() {
   const targetPath = route.meta.menu || route.path
-  const top = (auth.navigation || []).find((item) => menuContains(item, targetPath))
-  return top?.path || (top ? `/modules/${top.code}` : '')
+  const top = findModuleForPath(auth.navigation, targetPath)
+  return top ? modulePath(top) : ''
 }
+
+const returnTo = computed(() => backDestination(auth.navigation, route))
+const currentTitle = computed(() => route.name === 'module'
+  ? findModuleForPath(auth.navigation, route.path)?.title || route.meta.title
+  : route.meta.title || '当前页面')
 
 const activeKey = computed({
   get: findActiveKey,
@@ -144,6 +146,14 @@ async function handleUserMenu({ key }) {
       </a-dropdown>
     </template>
 
+    <nav v-if="returnTo" class="app-back-nav" aria-label="返回上一级">
+      <a-button type="text" class="app-back-nav__button" @click="router.push(returnTo.path)">
+        <ArrowLeftOutlined />
+        返回{{ returnTo.label }}
+      </a-button>
+      <span class="app-back-nav__current">{{ currentTitle }}</span>
+    </nav>
+
     <RouterView />
 
     <a-drawer
@@ -190,7 +200,32 @@ async function handleUserMenu({ key }) {
   color: var(--color-primary);
 }
 
+.app-back-nav {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 42px;
+  padding: 5px 20px 0;
+}
+
+.app-back-nav__button {
+  padding-inline: 4px;
+  color: var(--color-primary);
+}
+
+.app-back-nav__current {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @media (max-width: 760px) {
+  .app-back-nav {
+    padding-inline: 12px;
+  }
   .mobile-nav-trigger {
     display: inline-flex;
   }

@@ -2,6 +2,7 @@ import { request } from './client'
 
 export const api = {
   auth: {
+    options: () => request('/auth/options'),
     login: (body) => request('/auth/login', { method: 'POST', body }),
     register: (body) => request('/auth/register', { method: 'POST', body }),
     logout: () => request('/auth/logout', { method: 'POST', body: {} }),
@@ -107,4 +108,3 @@ export const api = {
     runJobs: () => request('/admin/jobs/run', { method: 'POST', body: {} }),
   },
 }
-

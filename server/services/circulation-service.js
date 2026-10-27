@@ -23,7 +23,8 @@ import { promoteNextReservation } from './reservation-queue.js'
 const LOAN_SELECT = `SELECT l.*, b.title AS book_title, b.isbn, b.cover_url,
     cp.barcode, cp.location, cp.shelf,
     rp.reader_no, rp.full_name AS reader_name, rp.user_id AS reader_user_id,
-    (SELECT f.amount_cents FROM fees f WHERE f.loan_id = l.id AND f.type = 'overdue' LIMIT 1)
+    (SELECT COALESCE(SUM(f.amount_cents), 0) FROM fees f
+      WHERE f.loan_id = l.id AND f.type = 'overdue')
       AS overdue_fee_cents
   FROM loans l
   JOIN books b ON b.id = l.book_id
@@ -115,6 +116,11 @@ export function createCirculationService({
         overdueLoans: reader.overdueLoans,
       })
     }
+    if (reader.pendingFees > 0) {
+      throw new AppError(ERR.PENDING_FEES_BLOCK, '读者有未缴费用，请先处理后再借书', 409, {
+        pendingFees: reader.pendingFees,
+      })
+    }
     const maxBorrow = reader.maxBorrowOverride || settings.get('max_borrow')
     if (reader.activeLoans >= maxBorrow) {
       throw new AppError(ERR.BORROW_LIMIT, `已达到借阅上限（${maxBorrow} 册）`, 409, {
@@ -145,9 +151,9 @@ export function createCirculationService({
       reservation = db
         .prepare(
           `SELECT * FROM reservations WHERE copy_id = ? AND book_id = ?
-           AND status = 'ready' AND reader_id = ?`,
+           AND status = 'ready' AND reader_id = ? AND pickup_expires_at >= ?`,
         )
-        .get(copyRow.id, copyRow.book_id, reader.id)
+        .get(copyRow.id, copyRow.book_id, reader.id, now.toISOString())
       if (!reservation) {
         throw new AppError(ERR.COPY_RESERVED, '该副本已为其他预约读者保留', 409)
       }
@@ -304,19 +310,25 @@ export function createCirculationService({
     if (days <= 0 || rate <= 0) return null
     const amount = days * rate
     const nowIso = now.toISOString()
-    const existing = db
-      .prepare("SELECT * FROM fees WHERE loan_id = ? AND type = 'overdue'")
-      .get(loan.id)
-    if (existing) {
-      if (existing.status === 'pending' && Number(existing.amount_cents) !== amount) {
+    const fees = db
+      .prepare("SELECT * FROM fees WHERE loan_id = ? AND type = 'overdue' ORDER BY id")
+      .all(loan.id)
+    const settledAmount = fees
+      .filter((fee) => fee.status !== 'pending')
+      .reduce((total, fee) => total + Number(fee.amount_cents), 0)
+    const remainingAmount = Math.max(0, amount - settledAmount)
+    const pending = fees.find((fee) => fee.status === 'pending')
+    if (pending) {
+      if (Number(pending.amount_cents) !== remainingAmount) {
         db.prepare('UPDATE fees SET amount_cents = ?, updated_at = ? WHERE id = ?').run(
-          amount,
+          remainingAmount,
           nowIso,
-          existing.id,
+          pending.id,
         )
       }
-      return db.prepare('SELECT * FROM fees WHERE id = ?').get(existing.id)
+      return db.prepare('SELECT * FROM fees WHERE id = ?').get(pending.id)
     }
+    if (remainingAmount === 0) return null
     const result = db
       .prepare(
         `INSERT INTO fees (reader_id, loan_id, type, amount_cents, status, note, created_at, updated_at)
@@ -325,7 +337,7 @@ export function createCirculationService({
       .run(
         loan.reader_id,
         loan.id,
-        amount,
+        remainingAmount,
         `逾期 ${days} 天，按每天 ${Number((rate / 100).toFixed(2))} 元自动计算`,
         nowIso,
         nowIso,

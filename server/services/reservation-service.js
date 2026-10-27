@@ -54,6 +54,9 @@ export function createReservationService({ db, clock = () => new Date(), setting
     if (!reader || reader.status !== 'active') {
       throw new AppError(ERR.READER_DISABLED, '读者证已停用', 403)
     }
+    if (reader.expires_at && new Date(reader.expires_at).getTime() < clock().getTime()) {
+      throw new AppError(ERR.READER_EXPIRED, '读者证已过期，不能预约', 403)
+    }
     const activeLoan = db
       .prepare('SELECT id FROM loans WHERE reader_id = ? AND book_id = ? AND returned_at IS NULL')
       .get(user.readerId, bookId)

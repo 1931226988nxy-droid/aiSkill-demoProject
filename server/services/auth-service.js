@@ -285,9 +285,9 @@ export function createAuthService({
     const row = db.prepare(`${USER_QUERY} WHERE u.id = ?`).get(userId)
     if (!row) throw new AppError(ERR.NOT_FOUND, '用户不存在', 404)
     const displayName = optionalString(input.displayName, 'displayName', '姓名', { max: 50 }) || null
-    const phone = optionalPhone(input.phone)
-    const email = optionalEmail(input.email)
-    const idCard = optionalIdCard(input.idCard)
+    const phone = optionalPhone(input.phone === undefined ? row.phone : input.phone)
+    const email = optionalEmail(input.email === undefined ? row.email : input.email)
+    const idCard = optionalIdCard(input.idCard === undefined ? row.id_card : input.idCard)
     try {
       transaction(db, () => {
         const now = clock().toISOString()

@@ -16,7 +16,7 @@ export function createServices({ db, clock = () => new Date(), notificationAdapt
   const settings = createSettingsService({ db, clock })
   const notifications = createNotificationService({ db, clock, externalAdapter: notificationAdapter })
   const auth = createAuthService({ db, clock, settings, notifications })
-  const catalog = createCatalogService({ db, clock })
+  const catalog = createCatalogService({ db, clock, settings, notifications })
   const circulation = createCirculationService({ db, clock, settings, notifications })
   const reservations = createReservationService({ db, clock, settings, notifications })
   const readers = createReaderService({ db, clock })

@@ -126,6 +126,37 @@ function mapAnnouncement(row) {
 }
 
 export function createAdminService({ db, clock = () => new Date(), settings }) {
+  function assertManageableRoles(roles, actor) {
+    if (actor?.role?.code === 'admin') return
+    const allowed = new Set(db.prepare(
+      `SELECT p.code FROM role_permissions rp
+       JOIN permissions p ON p.id = rp.permission_id
+       WHERE rp.role_id = ? AND p.status = 'active'`,
+    ).all(actor?.role?.id || -1).map((row) => row.code))
+    for (const role of roles) {
+      if (role.code === 'admin') {
+        throw new AppError(ERR.FORBIDDEN, '只有管理员可以分配管理员角色', 403)
+      }
+      const permissions = db.prepare(
+        `SELECT p.code FROM role_permissions rp
+         JOIN permissions p ON p.id = rp.permission_id
+         WHERE rp.role_id = ? AND p.status = 'active'`,
+      ).all(role.id)
+      if (permissions.some(({ code }) => !allowed.has(code))) {
+        throw new AppError(ERR.FORBIDDEN, '不能分配超出当前角色权限的角色', 403)
+      }
+    }
+  }
+
+  function assertAdminTarget(current, actor) {
+    if (actor?.role?.code === 'admin') return
+    const adminRole = db.prepare(
+      `SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+       WHERE ur.user_id = ? AND r.code = 'admin'`,
+    ).get(current.id)
+    if (adminRole) throw new AppError(ERR.FORBIDDEN, '只有管理员可以管理管理员账号', 403)
+  }
+
   function listUsers(filters = {}) {
     const { page, pageSize, offset } = parsePaging(filters)
     const where = [
@@ -168,6 +199,7 @@ export function createAdminService({ db, clock = () => new Date(), settings }) {
     const pass = password(input.password)
     const displayName = requiredString(input.displayName, 'displayName', '姓名', { max: 50 })
     const roles = resolveRoleCodes(db, input)
+    assertManageableRoles(roles, actor)
     const primaryRoleCode = input.primaryRoleCode || roles[0].code
     const primaryRole = roles.find((role) => role.code === primaryRoleCode)
     if (!primaryRole) {
@@ -222,6 +254,7 @@ export function createAdminService({ db, clock = () => new Date(), settings }) {
   function updateUser(id, input, actor, ip = '') {
     const current = db.prepare(`${USER_SELECT} WHERE u.id = ?`).get(id)
     if (!current) throw new AppError(ERR.NOT_FOUND, '账号不存在', 404)
+    assertAdminTarget(current, actor)
     const currentRoles = rolesForUsers(db, [id]).get(id) || []
     const displayName = input.displayName === undefined
       ? current.display_name
@@ -231,6 +264,7 @@ export function createAdminService({ db, clock = () => new Date(), settings }) {
       : enumValue(input.status, 'status', '账号状态', ['active', 'disabled'])
     const roleCodesProvided = input.roleCodes !== undefined || input.roleCode !== undefined
     const roles = roleCodesProvided ? resolveRoleCodes(db, input) : currentRoles
+    assertManageableRoles(roles, actor)
     const primaryRoleCode = input.primaryRoleCode || roles.find((role) => role.id === current.role_id)?.code || roles[0]?.code
     const primaryRole = roles.find((role) => role.code === primaryRoleCode)
     if (!primaryRole) {
@@ -290,6 +324,7 @@ export function createAdminService({ db, clock = () => new Date(), settings }) {
   function resetPassword(id, input, actor, ip = '') {
     const current = db.prepare(`${USER_SELECT} WHERE u.id = ?`).get(id)
     if (!current) throw new AppError(ERR.NOT_FOUND, '账号不存在', 404)
+    assertAdminTarget(current, actor)
     const temporary = input?.newPassword
       ? password(input.newPassword)
       : randomBytes(9).toString('base64url')
@@ -384,6 +419,9 @@ export function createAdminService({ db, clock = () => new Date(), settings }) {
   function updateRole(id, input, actor, ip = '') {
     const role = db.prepare('SELECT * FROM roles WHERE id = ?').get(id)
     if (!role) throw new AppError(ERR.NOT_FOUND, '角色不存在', 404)
+    if (role.built_in && actor?.role?.code !== 'admin') {
+      throw new AppError(ERR.FORBIDDEN, '只有管理员可以修改内置角色', 403)
+    }
     const name = input.name === undefined
       ? role.name
       : requiredString(input.name, 'name', '角色名称', { max: 40 })
@@ -410,6 +448,9 @@ export function createAdminService({ db, clock = () => new Date(), settings }) {
     if (role.code === 'admin') {
       throw new AppError(ERR.CONFLICT, '管理员角色拥有全部权限，不允许修改', 409)
     }
+    if (role.built_in && actor?.role?.code !== 'admin') {
+      throw new AppError(ERR.FORBIDDEN, '只有管理员可以修改内置角色权限', 403)
+    }
     if (!Array.isArray(codes)) {
       throw new AppError(ERR.VALIDATION, '权限列表格式不正确', 422)
     }
@@ -418,6 +459,15 @@ export function createAdminService({ db, clock = () => new Date(), settings }) {
     const unknown = unique.filter((code) => !allowed.has(code))
     if (unknown.length) {
       throw new AppError(ERR.VALIDATION, `未知权限：${unknown.join('、')}`, 422)
+    }
+    if (actor?.role?.code !== 'admin') {
+      const ownPermissions = new Set(db.prepare(
+        `SELECT p.code FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id
+         WHERE rp.role_id = ? AND p.status = 'active'`,
+      ).all(actor?.role?.id || -1).map((row) => row.code))
+      if (unique.some((code) => !ownPermissions.has(code))) {
+        throw new AppError(ERR.FORBIDDEN, '不能授予超出当前角色的权限', 403)
+      }
     }
     const now = clock().toISOString()
     return transaction(db, () => {

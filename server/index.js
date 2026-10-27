@@ -11,7 +11,13 @@ import { runAutomatedJobs } from './services/jobs.js'
 const config = loadConfig()
 const db = openDatabase(config.dbPath)
 runMigrations(db)
-const seedResult = seedDatabase(db)
+const seedResult = seedDatabase(db, {
+  demo: !config.production,
+  initialAdmin: {
+    username: config.initialAdminUsername,
+    password: config.initialAdminPassword,
+  },
+})
 const clock = () => new Date()
 const services = createServices({ db, clock })
 
@@ -66,8 +72,10 @@ httpServer.listen(config.port, config.host, () => {
   const mode = config.production ? 'production' : 'development'
   console.log(`图书馆管理系统（${mode}）: http://localhost:${config.port}`)
   console.log(`数据库: ${config.dbPath}`)
-  if (seedResult.seeded) {
+  if (seedResult.seeded && seedResult.demo) {
     console.log('已写入演示数据：admin/admin123、librarian/lib123456、reader/reader123')
+  } else if (seedResult.seeded) {
+    console.log(`已创建初始管理员：${config.initialAdminUsername}`)
   }
 })
 

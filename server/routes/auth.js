@@ -16,6 +16,13 @@ export function createAuthRouter({ services, middleware, config }) {
     )
   }
 
+  router.get('/options', (req, res) => {
+    res.json({
+      allowRegistration: services.settings.get('allow_registration'),
+      demoAccounts: !config.production,
+    })
+  })
+
   router.post('/login', (req, res) => {
     const result = services.auth.login(req.body || {}, { ip: req.ip || '' })
     setCookie(res, result.token)

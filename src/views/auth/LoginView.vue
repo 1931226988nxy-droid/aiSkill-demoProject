@@ -1,10 +1,11 @@
 <script setup>
-import { reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { LockOutlined, UserOutlined } from '@ant-design/icons-vue'
 import AuthShell from '@/components/AuthShell.vue'
 import { useAuthStore } from '@/stores/auth'
+import { api } from '@/api'
 import { getErrorMessage } from '@/api/client'
 import { safeRedirect } from '@/utils'
 
@@ -15,6 +16,15 @@ const formRef = ref()
 const submitting = ref(false)
 const errorText = ref('')
 const formState = reactive({ username: '', password: '' })
+const options = ref({ allowRegistration: false, demoAccounts: false })
+
+onMounted(async () => {
+  try {
+    options.value = await api.auth.options()
+  } catch {
+    // 登录仍可使用；未确认开放的入口不展示。
+  }
+})
 
 const rules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
@@ -103,7 +113,7 @@ async function submit() {
       </a-button>
     </a-form>
 
-    <div class="auth-demo">
+    <div v-if="options.demoAccounts" class="auth-demo">
       <span>演示账号</span>
       <a-space wrap>
         <a-button
@@ -117,7 +127,7 @@ async function submit() {
       </a-space>
     </div>
 
-    <p class="auth-switch">
+    <p v-if="options.allowRegistration" class="auth-switch">
       还没有读者账号？
       <RouterLink to="/register">立即注册</RouterLink>
     </p>

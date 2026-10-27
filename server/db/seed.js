@@ -3,6 +3,7 @@ import { DEFAULT_MENU_TREE } from '../domain/default-menus.js'
 import { hashPassword } from '../lib/passwords.js'
 import { endOfShanghaiDayAfter } from '../lib/time.js'
 import { transaction } from '../lib/transaction.js'
+import { password, username } from '../lib/validation.js'
 
 function insertSettings(db, now) {
   const insert = db.prepare(
@@ -116,7 +117,11 @@ function seedDefaultMenus(db, nowIso) {
   })
 }
 
-export function seedDatabase(db, { clock = () => new Date() } = {}) {
+export function seedDatabase(db, {
+  clock = () => new Date(),
+  demo = true,
+  initialAdmin = null,
+} = {}) {
   const now = clock()
   const nowIso = now.toISOString()
   insertSettings(db, nowIso)
@@ -127,8 +132,19 @@ export function seedDatabase(db, { clock = () => new Date() } = {}) {
     seedDefaultMenus(db, nowIso)
     return { seeded: false }
   }
+  if (!demo && !initialAdmin?.password) {
+    throw new Error('生产环境首次启动空数据库时，请设置 INITIAL_ADMIN_PASSWORD')
+  }
+  const bootstrapAdmin = demo ? null : {
+    username: username(initialAdmin?.username || 'admin'),
+    password: password(initialAdmin?.password),
+  }
 
   transaction(db, () => {
+    if (!demo) {
+      db.prepare("UPDATE settings SET value = 'false', updated_at = ? WHERE key = 'allow_registration'")
+        .run(nowIso)
+    }
     const roleIds = new Map()
     const roleInsert = db.prepare(
       'INSERT INTO roles (code, name, description, built_in, created_at) VALUES (?, ?, ?, ?, ?)',
@@ -166,6 +182,18 @@ export function seedDatabase(db, { clock = () => new Date() } = {}) {
     const userRoleInsert = db.prepare(
       'INSERT INTO user_roles (user_id, role_id, created_at) VALUES (?, ?, ?)',
     )
+    if (bootstrapAdmin) {
+      const adminId = Number(userInsert.run(
+        bootstrapAdmin.username,
+        hashPassword(bootstrapAdmin.password),
+        '系统管理员',
+        roleIds.get('admin'),
+        nowIso,
+        nowIso,
+      ).lastInsertRowid)
+      userRoleInsert.run(adminId, roleIds.get('admin'), nowIso)
+      return
+    }
     const admin = Number(
       userInsert.run(
         'admin',
@@ -577,5 +605,5 @@ export function seedDatabase(db, { clock = () => new Date() } = {}) {
 
   ensureBuiltInReaderPermissions(db, nowIso)
   seedDefaultMenus(db, nowIso)
-  return { seeded: true }
+  return { seeded: true, demo }
 }

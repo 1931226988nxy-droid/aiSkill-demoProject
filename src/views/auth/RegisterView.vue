@@ -1,10 +1,11 @@
 <script setup>
-import { reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { IdcardOutlined, LockOutlined, MailOutlined, PhoneOutlined, UserOutlined } from '@ant-design/icons-vue'
 import AuthShell from '@/components/AuthShell.vue'
 import { useAuthStore } from '@/stores/auth'
+import { api } from '@/api'
 import { getErrorMessage } from '@/api/client'
 
 const auth = useAuthStore()
@@ -12,6 +13,15 @@ const router = useRouter()
 const formRef = ref()
 const submitting = ref(false)
 const errorText = ref('')
+const registrationAvailable = ref(null)
+
+onMounted(async () => {
+  try {
+    registrationAvailable.value = Boolean((await api.auth.options()).allowRegistration)
+  } catch {
+    errorText.value = '暂时无法确认注册状态，请稍后重试'
+  }
+})
 const formState = reactive({
   username: '',
   displayName: '',
@@ -50,7 +60,7 @@ const rules = {
 }
 
 async function submit() {
-  if (submitting.value) return
+  if (submitting.value || registrationAvailable.value !== true) return
   errorText.value = ''
   try {
     await formRef.value.validate()
@@ -83,7 +93,12 @@ async function submit() {
 
 <template>
   <AuthShell>
-    <h2 class="auth-title">读者注册</h2>
+    <a-skeleton v-if="registrationAvailable === null && !errorText" active :paragraph="{ rows: 5 }" />
+    <a-result v-else-if="registrationAvailable !== true" status="info" title="当前无法自助注册" :sub-title="errorText || '请联系图书馆管理员开通账号'">
+      <template #extra><a-button type="primary" @click="router.push('/login')">返回登录</a-button></template>
+    </a-result>
+    <template v-else>
+      <h2 class="auth-title">读者注册</h2>
     <p class="auth-subtitle">注册后可使用读者证号检索、预约和借阅图书</p>
 
     <a-alert
@@ -162,6 +177,7 @@ async function submit() {
       已有账号？
       <RouterLink to="/login">返回登录</RouterLink>
     </p>
+    </template>
   </AuthShell>
 </template>
 
