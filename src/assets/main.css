@@ -755,6 +755,15 @@ a {
   flex-shrink: 0;
 }
 
+.fs-sidebar.ant-layout-sider-collapsed .fs-side-top {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.fs-sidebar.ant-layout-sider-collapsed .ant-menu-item {
+  padding-inline: calc((var(--sidebar-collapsed-width) - 32px) / 2) !important;
+}
+
 .fs-sidebar .ant-menu {
   flex: 1 1 auto;
   min-height: 0;
