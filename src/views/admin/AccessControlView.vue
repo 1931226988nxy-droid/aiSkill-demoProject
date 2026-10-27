@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { useRouter } from 'vue-router'
 import { JccPagePanel } from '@jcc/shared/components'
-import { PlusOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, RightOutlined } from '@ant-design/icons-vue'
 import { api } from '@/api'
 import { getErrorMessage } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
@@ -15,6 +15,7 @@ const activeTab = ref('permissions')
 const loading = ref(true)
 const permissions = ref([])
 const menus = ref([])
+const expandedMenuIds = ref(new Set())
 const permissionKeyword = ref('')
 const permissionModalOpen = ref(false)
 const permissionMode = ref('create')
@@ -132,6 +133,41 @@ const parentOptions = computed(() => {
   return result
 })
 
+function menuChildren(node, type) {
+  return (node.children || []).filter((child) => child.type === type)
+}
+
+function isMenuExpanded(node) {
+  return expandedMenuIds.value.has(node.id)
+}
+
+function toggleMenu(node) {
+  const next = new Set(expandedMenuIds.value)
+  if (next.has(node.id)) next.delete(node.id)
+  else next.add(node.id)
+  expandedMenuIds.value = next
+}
+
+function expandableMenuIds(nodes) {
+  const ids = new Set()
+  function walk(items) {
+    for (const node of items) {
+      if (node.children?.length) ids.add(node.id)
+      walk(node.children || [])
+    }
+  }
+  walk(nodes)
+  return ids
+}
+
+function expandAllMenus() {
+  expandedMenuIds.value = expandableMenuIds(menus.value)
+}
+
+function collapseAllMenus() {
+  expandedMenuIds.value = new Set()
+}
+
 function statusColor(status) {
   return status === 'active' ? 'green' : 'default'
 }
@@ -144,10 +180,15 @@ async function loadPermissions() {
 async function loadMenus() {
   if (!auth.can('menu.manage')) {
     menus.value = []
+    collapseAllMenus()
     return
   }
   const data = await api.admin.menus()
   menus.value = data.items
+  const validIds = expandableMenuIds(menus.value)
+  expandedMenuIds.value = new Set(
+    [...expandedMenuIds.value].filter((id) => validIds.has(id)),
+  )
 }
 
 async function load() {
@@ -310,6 +351,9 @@ async function saveMenu() {
     )
     menuModalOpen.value = false
     await Promise.all([loadMenus(), loadPermissions(), auth.loadNavigation()])
+    if (menuMode.value === 'create' && menuForm.parentId) {
+      expandedMenuIds.value = new Set([...expandedMenuIds.value, menuForm.parentId])
+    }
   } catch (error) {
     menuError.value = getErrorMessage(error)
   } finally {
@@ -425,9 +469,28 @@ onMounted(load)
         />
         <div v-else class="access-menu-scroll">
           <a-spin :spinning="loading">
+            <div v-if="menus.length" class="menu-tree-toolbar">
+              <a-button size="small" @click="expandAllMenus">全部展开</a-button>
+              <a-button size="small" @click="collapseAllMenus">全部收起</a-button>
+            </div>
             <a-empty v-if="!menus.length" description="暂无菜单，可新增模块" />
             <div v-for="moduleNode in menus" :key="moduleNode.id" class="menu-block">
-              <div class="menu-row menu-row--module" :class="{ 'is-disabled': moduleNode.status !== 'active' }">
+              <div
+                class="menu-row menu-row--module"
+                :class="{ 'is-disabled': moduleNode.status !== 'active', 'is-expandable': moduleNode.children?.length }"
+                @click="moduleNode.children?.length && toggleMenu(moduleNode)"
+              >
+                <button
+                  v-if="moduleNode.children?.length"
+                  type="button"
+                  class="menu-toggle"
+                  :aria-label="`${isMenuExpanded(moduleNode) ? '收起' : '展开'}${moduleNode.title}`"
+                  :aria-expanded="isMenuExpanded(moduleNode)"
+                  @click.stop="toggleMenu(moduleNode)"
+                >
+                  <RightOutlined :class="{ 'is-expanded': isMenuExpanded(moduleNode) }" />
+                </button>
+                <span v-else class="menu-toggle menu-toggle--placeholder" aria-hidden="true" />
                 <span class="menu-row__icon">
                   <component :is="resolveMenuIcon(moduleNode.icon)" />
                 </span>
@@ -447,7 +510,7 @@ onMounted(load)
                     权限：{{ moduleNode.permissions.map(permissionLabel).join('、') }}
                   </span>
                 </div>
-                <div class="menu-actions">
+                <div class="menu-actions" @click.stop>
                   <a-button
                     v-if="moduleNode.type === 'module'"
                     type="link"
@@ -474,42 +537,98 @@ onMounted(load)
               </div>
 
               <div
-                v-for="groupNode in moduleNode.children || []"
-                :key="groupNode.id"
-                class="menu-block menu-block--group"
+                v-if="moduleNode.children?.length && isMenuExpanded(moduleNode)"
+                :id="`menu-children-${moduleNode.id}`"
+                class="menu-children"
               >
-                <div class="menu-row menu-row--group" :class="{ 'is-disabled': groupNode.status !== 'active' }">
-                  <span class="menu-row__icon">
-                    <component :is="resolveMenuIcon(groupNode.icon)" />
-                  </span>
-                  <div class="menu-row__main">
-                    <strong>{{ groupNode.title }}</strong>
-                    <span class="menu-meta">
-                      <a-tag color="purple">标签分组</a-tag>
-                      <code>{{ groupNode.code }}</code>
-                      <a-tag :color="statusColor(groupNode.status)">
-                        {{ groupNode.status === 'active' ? '启用' : '停用' }}
-                      </a-tag>
+                <div
+                  v-for="groupNode in menuChildren(moduleNode, 'group')"
+                  :key="groupNode.id"
+                  class="menu-block menu-block--group"
+                >
+                  <div
+                    class="menu-row menu-row--group"
+                    :class="{ 'is-disabled': groupNode.status !== 'active', 'is-expandable': groupNode.children?.length }"
+                    @click="groupNode.children?.length && toggleMenu(groupNode)"
+                  >
+                    <button
+                      v-if="groupNode.children?.length"
+                      type="button"
+                      class="menu-toggle"
+                      :aria-label="`${isMenuExpanded(groupNode) ? '收起' : '展开'}${groupNode.title}`"
+                      :aria-expanded="isMenuExpanded(groupNode)"
+                      @click.stop="toggleMenu(groupNode)"
+                    >
+                      <RightOutlined :class="{ 'is-expanded': isMenuExpanded(groupNode) }" />
+                    </button>
+                    <span v-else class="menu-toggle menu-toggle--placeholder" aria-hidden="true" />
+                    <span class="menu-row__icon">
+                      <component :is="resolveMenuIcon(groupNode.icon)" />
                     </span>
-                    <span v-if="groupNode.permissions.length" class="menu-perms">
-                      权限：{{ groupNode.permissions.map(permissionLabel).join('、') }}
-                    </span>
+                    <div class="menu-row__main">
+                      <strong>{{ groupNode.title }}</strong>
+                      <span class="menu-meta">
+                        <a-tag color="purple">标签分组</a-tag>
+                        <code>{{ groupNode.code }}</code>
+                        <a-tag :color="statusColor(groupNode.status)">
+                          {{ groupNode.status === 'active' ? '启用' : '停用' }}
+                        </a-tag>
+                      </span>
+                      <span v-if="groupNode.permissions.length" class="menu-perms">
+                        权限：{{ groupNode.permissions.map(permissionLabel).join('、') }}
+                      </span>
+                    </div>
+                    <div class="menu-actions" @click.stop>
+                      <a-button type="link" size="small" @click="openMenuCreate('item', groupNode)">
+                        加功能
+                      </a-button>
+                      <a-button type="link" size="small" @click="openMenuEdit(groupNode, 'group')">
+                        编辑
+                      </a-button>
+                      <a-button type="link" size="small" danger @click="deleteMenu(groupNode)">
+                        删除
+                      </a-button>
+                    </div>
                   </div>
-                  <div class="menu-actions">
-                    <a-button type="link" size="small" @click="openMenuCreate('item', groupNode)">
-                      加功能
-                    </a-button>
-                    <a-button type="link" size="small" @click="openMenuEdit(groupNode, 'group')">
-                      编辑
-                    </a-button>
-                    <a-button type="link" size="small" danger @click="deleteMenu(groupNode)">
-                      删除
-                    </a-button>
+                  <div v-if="groupNode.children?.length && isMenuExpanded(groupNode)" :id="`menu-children-${groupNode.id}`">
+                    <div
+                      v-for="itemNode in menuChildren(groupNode, 'item')"
+                      :key="itemNode.id"
+                      class="menu-row menu-row--item"
+                      :class="{ 'is-disabled': itemNode.status !== 'active' }"
+                    >
+                      <span class="menu-row__icon">
+                        <component :is="resolveMenuIcon(itemNode.icon)" />
+                      </span>
+                      <div class="menu-row__main">
+                        <strong>{{ itemNode.title }}</strong>
+                        <span class="menu-meta">
+                          <a-tag>功能</a-tag>
+                          <code>{{ itemNode.code }}</code>
+                          <code>{{ itemNode.path }}</code>
+                          <a-tag :color="statusColor(itemNode.status)">
+                            {{ itemNode.status === 'active' ? '启用' : '停用' }}
+                          </a-tag>
+                        </span>
+                        <span v-if="itemNode.permissions.length" class="menu-perms">
+                          权限：{{ itemNode.permissions.map(permissionLabel).join('、') }}
+                        </span>
+                      </div>
+                      <div class="menu-actions">
+                        <a-button type="link" size="small" @click="openMenuEdit(itemNode, 'item')">
+                          编辑
+                        </a-button>
+                        <a-button type="link" size="small" danger @click="deleteMenu(itemNode)">
+                          删除
+                        </a-button>
+                      </div>
+                    </div>
                   </div>
                 </div>
+
                 <div
-                  v-for="itemNode in groupNode.children || []"
-                  :key="itemNode.id"
+                  v-for="itemNode in menuChildren(moduleNode, 'item')"
+                  :key="`direct-${itemNode.id}`"
                   class="menu-row menu-row--item"
                   :class="{ 'is-disabled': itemNode.status !== 'active' }"
                 >
@@ -538,39 +657,6 @@ onMounted(load)
                       删除
                     </a-button>
                   </div>
-                </div>
-              </div>
-
-              <div
-                v-for="itemNode in (moduleNode.type === 'module' ? (moduleNode.children || []).filter((node) => node.type === 'item') : [])"
-                :key="`direct-${itemNode.id}`"
-                class="menu-row menu-row--item"
-                :class="{ 'is-disabled': itemNode.status !== 'active' }"
-              >
-                <span class="menu-row__icon">
-                  <component :is="resolveMenuIcon(itemNode.icon)" />
-                </span>
-                <div class="menu-row__main">
-                  <strong>{{ itemNode.title }}</strong>
-                  <span class="menu-meta">
-                    <a-tag>功能</a-tag>
-                    <code>{{ itemNode.code }}</code>
-                    <code>{{ itemNode.path }}</code>
-                    <a-tag :color="statusColor(itemNode.status)">
-                      {{ itemNode.status === 'active' ? '启用' : '停用' }}
-                    </a-tag>
-                  </span>
-                  <span v-if="itemNode.permissions.length" class="menu-perms">
-                    权限：{{ itemNode.permissions.map(permissionLabel).join('、') }}
-                  </span>
-                </div>
-                <div class="menu-actions">
-                  <a-button type="link" size="small" @click="openMenuEdit(itemNode, 'item')">
-                    编辑
-                  </a-button>
-                  <a-button type="link" size="small" danger @click="deleteMenu(itemNode)">
-                    删除
-                  </a-button>
                 </div>
               </div>
             </div>
@@ -741,6 +827,12 @@ onMounted(load)
 .access-menu-scroll {
   padding-right: 4px;
 }
+.menu-tree-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 12px;
+}
 .menu-block {
   margin-bottom: 14px;
 }
@@ -771,8 +863,45 @@ onMounted(load)
   margin-left: 30px;
   background: #fff;
 }
+.menu-row.is-expandable {
+  cursor: pointer;
+}
+.menu-row.is-expandable:hover {
+  border-color: var(--color-primary);
+}
 .menu-row.is-disabled {
   opacity: 0.55;
+}
+.menu-toggle {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.menu-toggle:hover,
+.menu-toggle:focus-visible {
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+.menu-toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.menu-toggle .anticon {
+  transition: transform 0.2s ease;
+}
+.menu-toggle .anticon.is-expanded {
+  transform: rotate(90deg);
+}
+.menu-toggle--placeholder {
+  pointer-events: none;
 }
 .menu-row__icon {
   display: grid;
