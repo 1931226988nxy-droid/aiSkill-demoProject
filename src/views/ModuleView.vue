@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { JccPagePanel } from '@jcc/shared/components'
 import { RightOutlined } from '@ant-design/icons-vue'
@@ -38,22 +38,6 @@ const groups = computed(() => {
   return result
 })
 
-const activeGroup = ref('')
-
-watch(
-  groups,
-  (value) => {
-    if (!value.length) {
-      activeGroup.value = ''
-      return
-    }
-    if (!value.some((group) => group.code === activeGroup.value)) {
-      activeGroup.value = value[0].code
-    }
-  },
-  { immediate: true },
-)
-
 function openItem(item) {
   if (item.path) router.push(item.path)
 }
@@ -63,50 +47,46 @@ function openItem(item) {
   <JccPagePanel :title="module?.title || '功能模块'">
     <template #extra>
       <span v-if="module" class="muted small">
-        {{ groups.length }} 个标签分组 ·
+        {{ groups.length }} 个分组 ·
         {{ groups.reduce((total, group) => total + (group.children?.length || 0), 0) }} 个功能
       </span>
     </template>
 
     <PageBody v-if="module" mode="scroll" :label="`${module.title}功能导航`">
-      <section class="module-card">
-        <header class="module-hero">
-          <div class="module-hero__icon">
-            <component :is="resolveMenuIcon(module.icon)" />
-          </div>
-          <div>
-            <h2>{{ module.title }}</h2>
-            <p>{{ module.description || '选择下方标签和功能卡片开始办理业务。' }}</p>
-          </div>
-        </header>
+      <div v-if="groups.length" class="module-groups">
+        <section v-for="group in groups" :key="group.code" class="module-card">
+          <header class="module-hero">
+            <div class="module-hero__icon">
+              <component :is="resolveMenuIcon(group.icon || module.icon)" />
+            </div>
+            <div>
+              <h2>{{ group.title }}</h2>
+              <p>{{ group.description || '选择下方功能开始办理业务。' }}</p>
+            </div>
+          </header>
 
-        <a-tabs v-if="groups.length" v-model:activeKey="activeGroup" class="module-tabs">
-          <a-tab-pane v-for="group in groups" :key="group.code" :tab="group.title">
-            <div class="module-group-intro">
-              {{ group.description || '选择一个功能进入。' }}
-            </div>
-            <div class="module-feature-grid">
-              <button
-                v-for="item in group.children || []"
-                :key="item.code"
-                type="button"
-                class="module-feature"
-                @click="openItem(item)"
-              >
-                <span class="module-feature__icon">
-                  <component :is="resolveMenuIcon(item.icon)" />
-                </span>
-                <span class="module-feature__body">
-                  <strong>{{ item.title }}</strong>
-                  <small>{{ item.description || '点击进入功能' }}</small>
-                </span>
-                <RightOutlined class="module-feature__arrow" />
-              </button>
-            </div>
-          </a-tab-pane>
-        </a-tabs>
-        <a-empty v-else description="当前模块暂无可访问功能" />
-      </section>
+          <div v-if="group.children?.length" class="module-feature-grid">
+            <button
+              v-for="item in group.children"
+              :key="item.code"
+              type="button"
+              class="module-feature"
+              @click="openItem(item)"
+            >
+              <span class="module-feature__icon">
+                <component :is="resolveMenuIcon(item.icon)" />
+              </span>
+              <span class="module-feature__body">
+                <strong>{{ item.title }}</strong>
+                <small>{{ item.description || '点击进入功能' }}</small>
+              </span>
+              <RightOutlined class="module-feature__arrow" />
+            </button>
+          </div>
+          <a-empty v-else description="当前分组暂无可访问功能" />
+        </section>
+      </div>
+      <a-empty v-else description="当前模块暂无可访问功能" />
     </PageBody>
 
     <PageBody v-else-if="auth.navigationLoading" mode="fill" label="模块加载中">
@@ -128,6 +108,11 @@ function openItem(item) {
 </template>
 
 <style scoped>
+.module-groups {
+  display: grid;
+  gap: 18px;
+}
+
 .module-card {
   padding: 26px 28px 30px;
   background:
@@ -142,6 +127,7 @@ function openItem(item) {
   display: flex;
   align-items: center;
   gap: 18px;
+  margin-bottom: 22px;
   padding-bottom: 22px;
   border-bottom: 1px solid var(--color-border-soft);
 }
@@ -167,16 +153,6 @@ function openItem(item) {
 
 .module-hero p {
   margin: 6px 0 0 !important;
-  color: var(--color-text-muted);
-  font-size: 13px;
-}
-
-.module-tabs {
-  margin-top: 12px;
-}
-
-.module-group-intro {
-  margin: 2px 0 16px;
   color: var(--color-text-muted);
   font-size: 13px;
 }
