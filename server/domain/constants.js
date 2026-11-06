@@ -1,6 +1,11 @@
+/**
+ * 文件职责：内置权限、角色、系统参数和业务状态常量。
+ */
+
+// 内置权限清单。system=true 的权限不允许在后台停用；部署新增权限时会由 seed 自动补齐。
 export const PERMISSIONS = [
   { code: 'book.read', name: '检索与查看图书', group: '馆藏', system: true },
-  { code: 'book.manage', name: '图书编目与下架', group: '馆藏', system: true },
+  { code: 'book.manage', name: '图书编目与上下架', group: '馆藏', system: true },
   { code: 'copy.manage', name: '馆藏副本管理', group: '馆藏', system: true },
   { code: 'reader.manage', name: '读者管理', group: '读者', system: true },
   { code: 'reader.loans.view', name: '查看我的借阅', group: '读者', system: true },
@@ -18,6 +23,7 @@ export const PERMISSIONS = [
   { code: 'audit.view', name: '审计日志', group: '系统', system: true },
 ]
 
+// 首次建库的内置角色及初始授权。管理员实际权限始终由代码动态取全部启用权限。
 export const ROLE_DEFINITIONS = [
   {
     code: 'admin',
@@ -56,6 +62,7 @@ export const ROLE_DEFINITIONS = [
   },
 ]
 
+// 系统参数默认值：金额使用“分”，日期范围使用自然日；数据库只存字符串，由 settings 服务还原类型。
 export const DEFAULT_SETTINGS = [
   {
     key: 'library_name',
@@ -122,6 +129,7 @@ export const DEFAULT_SETTINGS = [
   },
 ]
 
+// 业务状态枚举与展示文案；后端校验和前端标签必须保持这些 code 一致。
 export const COPY_STATUS = {
   available: '可借',
   borrowed: '已借出',

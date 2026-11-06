@@ -1,152 +1,234 @@
+<script setup>
+// 登录和注册共用应用级品牌配置。
+import { siteConfig } from '@/site-config'
+</script>
+
+<!-- 文件职责：登录/注册页共用的品牌展示与响应式双栏卡片。 -->
 <template>
   <div class="auth-page">
-    <section class="auth-brand" aria-label="图书馆介绍">
-      <div class="auth-brand__mark" aria-hidden="true">书</div>
-      <p class="auth-brand__eyebrow">YUNLAN LIBRARY</p>
-      <h1>图书管理系统</h1>
-      <p class="auth-brand__lead">馆藏、借阅、预约与管理在一处完成。</p>
-      <ul class="auth-brand__features">
-        <li>实时馆藏检索与预约排队</li>
-        <li>借还、续借与逾期费用闭环</li>
-        <li>角色权限与完整审计记录</li>
-      </ul>
-    </section>
-    <section class="auth-panel">
-      <div class="auth-panel__inner">
-        <div class="auth-mobile-brand">
-          <span class="auth-brand__mark" aria-hidden="true">书</span>
-          <strong>图书管理系统</strong>
+    <div class="auth-card">
+      <section class="auth-brand" aria-label="图书馆介绍">
+        <div class="auth-brand__identity">
+          <span class="auth-brand__mark" aria-hidden="true">{{ siteConfig.brandMark }}</span>
+          <span class="auth-brand__name">
+            <strong>{{ siteConfig.shortName }}</strong>
+            <small>{{ siteConfig.englishName }}</small>
+          </span>
         </div>
+
+        <div class="auth-brand__message">
+          <h1>{{ siteConfig.title }}</h1>
+          <span class="auth-brand__rule" aria-hidden="true"></span>
+          <p>馆藏、借阅与管理，一站式办理。</p>
+        </div>
+      </section>
+
+      <main class="auth-content">
         <slot />
-      </div>
-    </section>
+      </main>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .auth-page {
   display: grid;
-  grid-template-columns: minmax(380px, 0.9fr) minmax(440px, 1.1fr);
+  place-items: center;
   height: 100vh;
   min-height: 100vh;
+  padding: 28px 24px;
   overflow-y: auto;
-  background: #f2f5fb;
+  background: var(--color-page);
 }
+
+.auth-card {
+  display: grid;
+  grid-template-columns: minmax(0, 42%) minmax(0, 58%);
+  width: min(980px, 100%);
+  min-height: 550px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: 0 18px 44px rgb(37 52 86 / 11%);
+}
+
 .auth-brand {
   position: relative;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding: 64px max(6vw, 56px);
-  color: #fff;
-  background:
-    radial-gradient(circle at 85% 20%, rgb(255 255 255 / 18%), transparent 34%),
-    radial-gradient(circle at 10% 90%, rgb(7 158 245 / 35%), transparent 32%),
-    linear-gradient(140deg, #1f5fd7 0%, #1677e8 48%, #08a8c9 100%);
+  justify-content: space-between;
+  min-width: 0;
+  padding: 50px 46px 62px;
+  overflow: hidden;
+  color: var(--color-header-text);
+  background: linear-gradient(
+    135deg,
+    var(--header-start) 0%,
+    var(--header-mid) 60%,
+    var(--header-end) 100%
+  );
 }
+
+.auth-brand::before,
 .auth-brand::after {
   content: '';
   position: absolute;
-  right: -80px;
-  bottom: -120px;
-  width: 380px;
-  height: 380px;
-  border: 1px solid rgb(255 255 255 / 22%);
-  border-radius: 50%;
-  box-shadow: 0 0 0 48px rgb(255 255 255 / 4%), 0 0 0 96px rgb(255 255 255 / 3%);
+  pointer-events: none;
+  background: rgb(255 255 255 / 7%);
+  transform: rotate(-22deg);
 }
+
+.auth-brand::before {
+  top: -90px;
+  right: -130px;
+  width: 270px;
+  height: 260px;
+  border-radius: 38px;
+}
+
+.auth-brand::after {
+  right: -105px;
+  bottom: -190px;
+  width: 360px;
+  height: 280px;
+  border-radius: 48px;
+}
+
+.auth-brand__identity,
+.auth-brand__message {
+  position: relative;
+  z-index: 1;
+}
+
+.auth-brand__identity {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
 .auth-brand__mark {
   display: grid;
   place-items: center;
-  width: 52px;
-  height: 52px;
-  border: 3px double rgb(255 255 255 / 90%);
+  flex: none;
+  width: 54px;
+  height: 54px;
+  border: 3px double rgb(255 255 255 / 95%);
   border-radius: 50%;
-  font-size: 23px;
+  font-size: 25px;
   font-weight: 700;
 }
-.auth-brand__eyebrow {
-  margin: 28px 0 6px;
-  font-size: 11px;
-  letter-spacing: 0.26em;
-  opacity: 0.8;
+
+.auth-brand__name {
+  display: grid;
+  gap: 3px;
 }
-.auth-brand h1 {
-  margin: 0;
-  font-size: clamp(34px, 4vw, 48px);
-  line-height: 1.15;
+
+.auth-brand__name strong {
+  font-size: 23px;
+  font-weight: 650;
   letter-spacing: 0.04em;
+  white-space: nowrap;
 }
-.auth-brand__lead {
-  max-width: 24em;
-  margin-top: 16px !important;
-  font-size: 16px;
-  line-height: 1.8;
+
+.auth-brand__name small {
+  font-size: 11px;
+  letter-spacing: 0.13em;
   opacity: 0.9;
 }
-.auth-brand__features {
-  margin: 38px 0 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 12px;
-  font-size: 14px;
-  opacity: 0.94;
-}
-.auth-brand__features li::before {
-  content: '·';
-  margin-right: 10px;
-  font-size: 22px;
-  line-height: 0;
-  vertical-align: -2px;
-}
-.auth-panel {
-  display: grid;
-  place-items: center;
-  padding: 40px 24px;
-}
-.auth-panel__inner {
-  width: min(440px, 100%);
-  padding: 38px 36px 32px;
-  background: #fff;
-  border: 1px solid var(--color-border-soft);
-  border-radius: 20px;
-  box-shadow: 0 22px 60px rgb(36 62 112 / 10%);
-}
-.auth-mobile-brand {
-  display: none;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 22px;
-}
-.auth-mobile-brand .auth-brand__mark {
-  width: 38px;
-  height: 38px;
+
+.auth-brand__message h1 {
+  margin: 0;
   color: #fff;
-  background: var(--color-primary);
-  font-size: 18px;
+  font-size: clamp(30px, 3.2vw, 40px);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
-@media (max-width: 900px) {
+
+.auth-brand__rule {
+  display: block;
+  width: 54px;
+  height: 4px;
+  margin: 24px 0 21px;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 70%);
+}
+
+.auth-brand__message p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.8;
+}
+
+.auth-content {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  padding: 46px clamp(36px, 4vw, 58px);
+}
+
+@media (max-width: 760px) {
   .auth-page {
+    display: block;
+    padding: 16px;
+  }
+
+  .auth-card {
     grid-template-columns: minmax(0, 1fr);
-    height: auto;
-    min-height: 100vh;
-    overflow-y: visible;
+    min-height: 0;
   }
+
   .auth-brand {
-    display: none;
+    gap: 36px;
+    padding: 24px 26px 28px;
   }
-  .auth-mobile-brand {
-    display: flex;
+
+  .auth-brand__mark {
+    width: 40px;
+    height: 40px;
+    font-size: 19px;
   }
-  .auth-panel {
-    padding: 24px 16px;
-    align-items: start;
+
+  .auth-brand__name strong {
+    font-size: 18px;
   }
-  .auth-panel__inner {
-    margin-top: 5vh;
-    padding: 28px 22px;
+
+  .auth-brand__name small {
+    font-size: 9px;
+  }
+
+  .auth-brand__message h1 {
+    font-size: 24px;
+  }
+
+  .auth-brand__rule {
+    width: 36px;
+    height: 3px;
+    margin: 12px 0 10px;
+  }
+
+  .auth-brand__message p {
+    font-size: 12px;
+  }
+
+  .auth-content {
+    padding: 28px 24px 32px;
+  }
+}
+
+@media (max-width: 380px) {
+  .auth-page {
+    padding: 10px;
+  }
+
+  .auth-brand {
+    padding-inline: 20px;
+  }
+
+  .auth-content {
+    padding-inline: 20px;
   }
 }
 </style>

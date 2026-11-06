@@ -1,7 +1,9 @@
 <script setup>
+import PagePanel from '@/components/PagePanel.vue'
+// 文件职责：读者档案、状态、借阅/预约/费用详情管理页。
 import { computed, onMounted, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { JccPagePanel, JccQueryBar, JccTable } from '@jcc/shared/components'
+import { JccFormModal, JccModal, JccQueryBar, JccTable } from '@jcc/shared/components'
 import { useTableQuery } from '@jcc/shared/hooks'
 import { api } from '@/api'
 import { getErrorMessage } from '@/api/client'
@@ -18,24 +20,28 @@ import StatusTag from '@/components/StatusTag.vue'
 
 const auth = useAuthStore()
 
-const readerFormRef = ref()
-const feeFormRef = ref()
 const modalOpen = ref(false)
 const modalMode = ref('create')
-const saving = ref(false)
-const modalError = ref('')
+const readerInitialValues = ref({})
 const detailOpen = ref(false)
 const detailLoading = ref(false)
 const selectedReader = ref(null)
 const detailTab = ref('loans')
 const detailData = reactive({ loans: [], reservations: [], fees: [] })
 const statusOpen = ref(false)
+const statusFullscreen = ref(false)
 const statusSaving = ref(false)
 const statusForm = reactive({ status: 'disabled', reason: '' })
 const feeOpen = ref(false)
-const feeSaving = ref(false)
-const feeForm = reactive({ type: 'damage', amount: 0, note: '' })
-const readerForm = reactive({
+const feeInitialValues = { type: 'damage', amount: null, note: '' }
+const feeRules = {
+  type: [{ required: true, message: '请选择类型', trigger: 'change' }],
+  amount: [
+    { required: true, type: 'number', min: 0.01, message: '请输入大于零的金额', trigger: 'change' },
+  ],
+  note: [{ required: true, min: 2, message: '请填写至少 2 个字符的费用说明', trigger: 'blur' }],
+}
+const emptyReaderForm = () => ({
   username: '',
   password: '',
   fullName: '',
@@ -57,22 +63,30 @@ const columns = [
 ]
 
 const readerRules = computed(() => ({
-  username: modalMode.value === 'create'
-    ? [
-        { required: true, message: '请输入用户名', trigger: 'blur' },
-        { pattern: /^[A-Za-z0-9_]{3,32}$/, message: '3-32 位字母、数字或下划线', trigger: 'blur' },
-      ]
-    : [],
-  password: modalMode.value === 'create'
-    ? [
-        { required: true, message: '请设置初始密码', trigger: 'blur' },
-        { min: 8, message: '密码至少 8 位', trigger: 'blur' },
-      ]
-    : [],
+  username:
+    modalMode.value === 'create'
+      ? [
+          { required: true, message: '请输入用户名', trigger: 'blur' },
+          {
+            pattern: /^[A-Za-z0-9_]{3,32}$/,
+            message: '3-32 位字母、数字或下划线',
+            trigger: 'blur',
+          },
+        ]
+      : [],
+  password:
+    modalMode.value === 'create'
+      ? [
+          { required: true, message: '请设置初始密码', trigger: 'blur' },
+          { min: 8, message: '密码至少 8 位', trigger: 'blur' },
+        ]
+      : [],
   fullName: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
   phone: [{ pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号', trigger: 'blur' }],
   email: [{ type: 'email', message: '请输入正确的邮箱', trigger: 'blur' }],
-  idCard: [{ pattern: /^(\d{15}|\d{17}[\dXx])$/, message: '请输入正确的身份证号', trigger: 'blur' }],
+  idCard: [
+    { pattern: /^(\d{15}|\d{17}[\dXx])$/, message: '请输入正确的身份证号', trigger: 'blur' },
+  ],
 }))
 
 const {
@@ -103,17 +117,7 @@ const {
 })
 
 function resetReaderForm() {
-  Object.assign(readerForm, {
-    username: '',
-    password: '',
-    fullName: '',
-    phone: '',
-    email: '',
-    idCard: '',
-    maxBorrowOverride: null,
-    expiresAt: '',
-  })
-  modalError.value = ''
+  readerInitialValues.value = emptyReaderForm()
 }
 
 function openCreate() {
@@ -123,12 +127,12 @@ function openCreate() {
 }
 
 async function openEdit(reader) {
+  // 列表数据已脱敏，编辑前单独请求详情才能拿到完整手机号/身份证号。
   modalMode.value = 'edit'
   selectedReader.value = reader
-  modalError.value = ''
   try {
     const detail = await api.readers.get(reader.id)
-    Object.assign(readerForm, {
+    readerInitialValues.value = {
       username: detail.username,
       password: '',
       fullName: detail.fullName,
@@ -137,42 +141,28 @@ async function openEdit(reader) {
       idCard: detail.idCard,
       maxBorrowOverride: detail.maxBorrowOverride,
       expiresAt: detail.expiresAt ? detail.expiresAt.slice(0, 10) : '',
-    })
+    }
     modalOpen.value = true
   } catch (error) {
     message.error(getErrorMessage(error))
   }
 }
 
-async function submitReader() {
-  if (saving.value) return
-  modalError.value = ''
-  try {
-    await readerFormRef.value.validate()
-  } catch {
-    return
-  }
-  saving.value = true
-  try {
-    if (modalMode.value === 'create') {
-      await api.readers.create({ ...readerForm })
-      message.success('读者已创建')
-    } else {
-      const { username, password, ...payload } = readerForm
-      await api.readers.update(selectedReader.value.id, payload)
-      message.success('读者资料已更新')
-      if (detailOpen.value) await loadDetail(selectedReader.value.id)
-    }
-    modalOpen.value = false
-    await refresh()
-  } catch (error) {
-    modalError.value = getErrorMessage(error)
-  } finally {
-    saving.value = false
-  }
+function submitReader(values, { signal }) {
+  if (modalMode.value === 'create') return api.readers.create(values, { signal })
+  // 编辑读者只更新档案字段，登录用户名和密码走独立的重置/改密流程。
+  const { username, password, ...payload } = values
+  return api.readers.update(selectedReader.value.id, payload, { signal })
+}
+
+async function afterReaderSaved() {
+  message.success(modalMode.value === 'create' ? '读者已创建' : '读者资料已更新')
+  await refresh()
+  if (modalMode.value === 'edit' && detailOpen.value) await loadDetail(selectedReader.value.id)
 }
 
 async function loadDetail(id) {
+  // 详情弹窗一次并行拉取档案、借阅、预约和费用，减少切换 Tab 的等待。
   detailLoading.value = true
   try {
     const [reader, loans, reservations, fees] = await Promise.all([
@@ -199,6 +189,7 @@ async function openDetail(reader) {
 }
 
 function askStatus(reader) {
+  statusFullscreen.value = false
   selectedReader.value = reader
   statusForm.status = reader.status === 'active' ? 'disabled' : 'active'
   statusForm.reason = ''
@@ -206,6 +197,7 @@ function askStatus(reader) {
 }
 
 async function changeStatus() {
+  // 后端会区分纯读者与馆员+读者双身份：双身份停用读者证不会停用登录账号。
   if (!statusForm.reason.trim()) {
     message.warning('请填写停用或启用原因')
     return
@@ -225,51 +217,36 @@ async function changeStatus() {
 }
 
 function openFee() {
-  feeForm.type = 'damage'
-  feeForm.amount = 0
-  feeForm.note = ''
   feeOpen.value = true
 }
 
-async function createFee() {
-  if (feeSaving.value) return
-  try {
-    await feeFormRef.value.validate()
-  } catch {
-    return
-  }
-  feeSaving.value = true
-  try {
-    await api.fees.create({
-      readerId: selectedReader.value.id,
-      type: feeForm.type,
-      amount: feeForm.amount,
-      note: feeForm.note,
-    })
-    message.success('费用已登记')
-    feeOpen.value = false
-    await loadDetail(selectedReader.value.id)
-  } catch (error) {
-    message.error(getErrorMessage(error))
-  } finally {
-    feeSaving.value = false
-  }
+function createFee(values, { signal }) {
+  return api.fees.create({ readerId: selectedReader.value.id, ...values }, { signal })
+}
+
+async function afterFeeSaved() {
+  message.success('费用已登记')
+  await loadDetail(selectedReader.value.id)
 }
 
 onMounted(refresh)
 </script>
 
 <template>
-  <JccPagePanel title="读者管理">
-    <template #extra>
-      <a-space wrap>
-        <span class="muted small">列表联系方式默认脱敏</span>
-        <a-button type="primary" @click="openCreate">新增读者</a-button>
-      </a-space>
-    </template>
-
+  <PagePanel title="读者管理">
     <JccQueryBar :loading="loading" @search="search" @reset="reset">
-      <a-input v-model:value="filters.q" class="filter-field--wide" placeholder="读者编号 / 姓名 / 手机号" allow-clear />
+      <template #actions>
+        <a-space wrap>
+          <span class="muted small">列表联系方式默认脱敏</span>
+          <a-button type="primary" @click="openCreate">新增读者</a-button>
+        </a-space>
+      </template>
+      <a-input
+        v-model:value="filters.q"
+        class="filter-field--wide"
+        placeholder="读者编号 / 姓名 / 手机号"
+        allow-clear
+      />
       <a-select v-model:value="filters.status" class="filter-field" aria-label="读者状态">
         <a-select-option value="all">全部状态</a-select-option>
         <a-select-option value="active">启用</a-select-option>
@@ -327,66 +304,74 @@ onMounted(refresh)
       </template>
     </JccTable>
 
-    <a-modal
+    <JccFormModal
       v-model:open="modalOpen"
       :title="modalMode === 'create' ? '新增读者' : '编辑读者'"
-      :confirm-loading="saving"
-      ok-text="保存"
-      cancel-text="取消"
-      :mask-closable="false"
+      :initial-values="readerInitialValues"
+      :rules="readerRules"
+      :submit="submitReader"
       width="min(700px, 94vw)"
-      @ok="submitReader"
+      @saved="afterReaderSaved"
     >
-      <a-alert v-if="modalError" type="error" show-icon :message="modalError" style="margin-bottom: 14px" />
-      <a-form ref="readerFormRef" :model="readerForm" :rules="readerRules" layout="vertical">
+      <template #default="{ model }">
         <a-row :gutter="16">
           <a-col :xs="24" :sm="12">
             <a-form-item label="用户名" name="username">
-              <a-input v-model:value="readerForm.username" :disabled="modalMode === 'edit'" autocomplete="off" />
+              <a-input
+                v-model:value="model.username"
+                :disabled="modalMode === 'edit'"
+                autocomplete="off"
+              />
             </a-form-item>
           </a-col>
           <a-col v-if="modalMode === 'create'" :xs="24" :sm="12">
             <a-form-item label="初始密码" name="password">
-              <a-input-password v-model:value="readerForm.password" autocomplete="new-password" />
+              <a-input-password v-model:value="model.password" autocomplete="new-password" />
             </a-form-item>
           </a-col>
           <a-col :xs="24" :sm="12">
             <a-form-item label="姓名" name="fullName">
-              <a-input v-model:value="readerForm.fullName" />
+              <a-input v-model:value="model.fullName" />
             </a-form-item>
           </a-col>
           <a-col :xs="24" :sm="12">
             <a-form-item label="手机号" name="phone">
-              <a-input v-model:value="readerForm.phone" />
+              <a-input v-model:value="model.phone" />
             </a-form-item>
           </a-col>
           <a-col :xs="24" :sm="12">
             <a-form-item label="邮箱" name="email">
-              <a-input v-model:value="readerForm.email" />
+              <a-input v-model:value="model.email" />
             </a-form-item>
           </a-col>
           <a-col :xs="24" :sm="12">
             <a-form-item label="身份证号" name="idCard">
-              <a-input v-model:value="readerForm.idCard" />
+              <a-input v-model:value="model.idCard" />
             </a-form-item>
           </a-col>
           <a-col :xs="24" :sm="12">
             <a-form-item label="借阅上限覆盖（选填）" name="maxBorrowOverride">
-              <a-input-number v-model:value="readerForm.maxBorrowOverride" :min="1" :max="100" style="width: 100%" />
+              <a-input-number
+                v-model:value="model.maxBorrowOverride"
+                :min="1"
+                :max="100"
+                style="width: 100%"
+              />
             </a-form-item>
           </a-col>
           <a-col :xs="24" :sm="12">
             <a-form-item label="读者证有效期（选填）" name="expiresAt">
-              <a-input v-model:value="readerForm.expiresAt" type="date" />
+              <a-input v-model:value="model.expiresAt" type="date" />
             </a-form-item>
           </a-col>
         </a-row>
         <p class="muted small">手机号和邮箱至少填写一项；留空借阅上限则使用系统配置。</p>
-      </a-form>
-    </a-modal>
+      </template>
+    </JccFormModal>
 
-    <a-modal
+    <JccModal
       :open="statusOpen"
+      v-model:fullscreen="statusFullscreen"
       :title="statusForm.status === 'active' ? '启用读者' : '停用读者'"
       :confirm-loading="statusSaving"
       ok-text="确认"
@@ -403,7 +388,7 @@ onMounted(refresh)
           <a-textarea v-model:value="statusForm.reason" :rows="3" />
         </a-form-item>
       </a-form>
-    </a-modal>
+    </JccModal>
 
     <a-drawer
       v-model:open="detailOpen"
@@ -428,19 +413,33 @@ onMounted(refresh)
             </div>
             <a-space style="margin-left: auto" wrap>
               <a-button size="small" @click="openEdit(selectedReader)">编辑</a-button>
-              <a-button v-if="auth.can('fee.manage')" size="small" @click="openFee">登记费用</a-button>
+              <a-button v-if="auth.can('fee.manage')" size="small" @click="openFee"
+                >登记费用</a-button
+              >
               <a-button size="small" @click="askStatus(selectedReader)">状态</a-button>
             </a-space>
           </div>
 
           <a-descriptions bordered size="small" :column="{ xs: 1, sm: 2 }">
-            <a-descriptions-item label="手机号">{{ selectedReader.phone || '—' }}</a-descriptions-item>
-            <a-descriptions-item label="邮箱">{{ selectedReader.email || '—' }}</a-descriptions-item>
-            <a-descriptions-item label="身份证号">{{ selectedReader.idCard || '—' }}</a-descriptions-item>
+            <a-descriptions-item label="手机号">{{
+              selectedReader.phone || '—'
+            }}</a-descriptions-item>
+            <a-descriptions-item label="邮箱">{{
+              selectedReader.email || '—'
+            }}</a-descriptions-item>
+            <a-descriptions-item label="身份证号">{{
+              selectedReader.idCard || '—'
+            }}</a-descriptions-item>
             <a-descriptions-item label="有效期">
-              {{ selectedReader.expiresAt ? formatDateTime(selectedReader.expiresAt, { dateOnly: true }) : '长期' }}
+              {{
+                selectedReader.expiresAt
+                  ? formatDateTime(selectedReader.expiresAt, { dateOnly: true })
+                  : '长期'
+              }}
             </a-descriptions-item>
-            <a-descriptions-item label="当前在借">{{ selectedReader.activeLoans }} 册</a-descriptions-item>
+            <a-descriptions-item label="当前在借"
+              >{{ selectedReader.activeLoans }} 册</a-descriptions-item
+            >
             <a-descriptions-item label="待处理费用">
               {{ formatMoney(selectedReader.pendingFees) }}
             </a-descriptions-item>
@@ -448,7 +447,12 @@ onMounted(refresh)
 
           <a-tabs v-model:activeKey="detailTab" style="margin-top: 16px">
             <a-tab-pane key="loans" tab="借阅记录">
-              <a-table size="small" :data-source="detailData.loans" :pagination="false" row-key="id">
+              <a-table
+                size="small"
+                :data-source="detailData.loans"
+                :pagination="false"
+                row-key="id"
+              >
                 <a-table-column title="图书" data-index="bookTitle" key="bookTitle" />
                 <a-table-column title="条码" data-index="barcode" key="barcode" />
                 <a-table-column title="应还" key="dueAt">
@@ -458,13 +462,21 @@ onMounted(refresh)
                 </a-table-column>
                 <a-table-column title="状态" key="status">
                   <template #default="{ record }">
-                    <StatusTag :status="record.overdue ? 'overdue' : record.status" :map="LOAN_STATUS_META" />
+                    <StatusTag
+                      :status="record.overdue ? 'overdue' : record.status"
+                      :map="LOAN_STATUS_META"
+                    />
                   </template>
                 </a-table-column>
               </a-table>
             </a-tab-pane>
             <a-tab-pane key="reservations" tab="预约记录">
-              <a-table size="small" :data-source="detailData.reservations" :pagination="false" row-key="id">
+              <a-table
+                size="small"
+                :data-source="detailData.reservations"
+                :pagination="false"
+                row-key="id"
+              >
                 <a-table-column title="图书" data-index="bookTitle" key="bookTitle" />
                 <a-table-column title="排队位置" data-index="queuePosition" key="queuePosition" />
                 <a-table-column title="状态" key="status">
@@ -475,7 +487,8 @@ onMounted(refresh)
               </a-table>
             </a-tab-pane>
             <a-tab-pane key="fees" tab="费用记录">
-              <a-table size="small" :data-source="detailData.fees" :pagination="false" row-key="id">                <a-table-column title="类型" key="type">
+              <a-table size="small" :data-source="detailData.fees" :pagination="false" row-key="id">
+                <a-table-column title="类型" key="type">
                   <template #default="{ record }">
                     <StatusTag :status="record.type" :map="FEE_TYPE_META" />
                   </template>
@@ -496,29 +509,34 @@ onMounted(refresh)
       </a-spin>
     </a-drawer>
 
-    <a-modal
+    <JccFormModal
       v-model:open="feeOpen"
       title="登记读者费用"
-      :confirm-loading="feeSaving"
-      ok-text="登记"
-      cancel-text="取消"
-      @ok="createFee"
+      :initial-values="feeInitialValues"
+      :rules="feeRules"
+      :submit="createFee"
+      @saved="afterFeeSaved"
     >
-      <a-form ref="feeFormRef" :model="feeForm" layout="vertical">
-        <a-form-item label="费用类型" name="type" :rules="[{ required: true, message: '请选择类型' }]">
-          <a-select v-model:value="feeForm.type">
+      <template #default="{ model }">
+        <a-form-item label="费用类型" name="type">
+          <a-select v-model:value="model.type">
             <a-select-option value="damage">损坏赔偿</a-select-option>
             <a-select-option value="lost">遗失赔偿</a-select-option>
             <a-select-option value="manual">人工费用</a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="金额（元）" name="amount" :rules="[{ required: true, message: '请输入金额' }]">
-          <a-input-number v-model:value="feeForm.amount" :min="0.01" :precision="2" style="width: 100%" />
+        <a-form-item label="金额（元）" name="amount">
+          <a-input-number
+            v-model:value="model.amount"
+            :min="0.01"
+            :precision="2"
+            style="width: 100%"
+          />
         </a-form-item>
-        <a-form-item label="说明" name="note" :rules="[{ required: true, min: 2, message: '请填写费用说明' }]">
-          <a-textarea v-model:value="feeForm.note" :rows="3" />
+        <a-form-item label="说明" name="note">
+          <a-textarea v-model:value="model.note" :rows="3" />
         </a-form-item>
-      </a-form>
-    </a-modal>
-  </JccPagePanel>
+      </template>
+    </JccFormModal>
+  </PagePanel>
 </template>

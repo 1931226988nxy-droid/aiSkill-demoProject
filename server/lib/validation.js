@@ -1,3 +1,7 @@
+/**
+ * 文件职责：服务端字段校验、ISBN 校验、金额转换和 LIKE 转义。
+ */
+
 import { AppError, ERR } from '../domain/errors.js'
 import { isValidDateOnly } from './time.js'
 
@@ -84,6 +88,7 @@ export function optionalDateOnly(value, field, label) {
 }
 
 export function normalizeIsbn(value) {
+  // 去掉空格/连字符后，ISBN-10 做加权校验，ISBN-13 做 1/3 交替加权校验。
   const text = String(value || '').replace(/[\s-]/g, '').toUpperCase()
   if (!/^(?:\d{9}[\dX]|\d{13})$/.test(text)) return null
   if (text.length === 10) {
@@ -110,6 +115,7 @@ export function isbn(value) {
 }
 
 export function moneyToCents(value, field = 'price', label = '金额', { max = 100_000_000 } = {}) {
+  // 金额 API 用元，数据库用分；四舍五入到整数分，避免浮点累计误差。
   const amount = typeof value === 'string' && value.trim() === '' ? 0 : Number(value)
   if (!Number.isFinite(amount) || amount < 0 || amount > max) invalid(field, `${label}格式不正确`)
   return Math.round(amount * 100)
@@ -120,6 +126,7 @@ export function formatCents(cents) {
 }
 
 export function escapeLike(value) {
+  // 配合 SQL 的 ESCAPE '\' 使用，避免用户输入的 %/_ 变成通配符。
   return String(value || '').replace(/[\\%_]/g, (char) => `\\${char}`)
 }
 

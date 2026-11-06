@@ -1,3 +1,7 @@
+/**
+ * 文件职责：动态权限/菜单和多角色接口测试。
+ */
+
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { apiRequest, createTestContext, login, startTestServer } from './helpers.js'

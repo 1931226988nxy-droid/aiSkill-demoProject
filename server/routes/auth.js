@@ -1,3 +1,7 @@
+/**
+ * 文件职责：登录、注册、个人资料、修改密码与角色切换接口。
+ */
+
 import { Router } from 'express'
 import { AppError, ERR } from '../domain/errors.js'
 import { clearSessionCookie, sessionCookie } from '../lib/cookies.js'
@@ -17,6 +21,7 @@ export function createAuthRouter({ services, middleware, config }) {
   }
 
   router.get('/options', (req, res) => {
+    // 登录页在未登录状态读取注册开关和演示账号提示，不能要求认证。
     res.json({
       allowRegistration: services.settings.get('allow_registration'),
       demoAccounts: !config.production,
@@ -55,6 +60,7 @@ export function createAuthRouter({ services, middleware, config }) {
   })
 
   router.post('/role', requireAuth, (req, res) => {
+    // 切换只改变当前会话的 active_role_id，不修改用户主角色。
     const roleCode = req.body?.roleCode
     if (!roleCode) throw new AppError(ERR.VALIDATION, '请选择要切换的角色', 422)
     res.json(

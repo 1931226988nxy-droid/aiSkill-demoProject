@@ -1,7 +1,9 @@
 <script setup>
+import PagePanel from '@/components/PagePanel.vue'
+// 文件职责：馆员费用查询、线下处理和豁免页。
 import { onMounted, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { JccPagePanel, JccQueryBar, JccTable } from '@jcc/shared/components'
+import { JccModal, JccQueryBar, JccTable } from '@jcc/shared/components'
 import { useTableQuery } from '@jcc/shared/hooks'
 import { api } from '@/api'
 import { getErrorMessage } from '@/api/client'
@@ -10,6 +12,7 @@ import { formatDateTime, formatMoney } from '@/utils'
 import StatusTag from '@/components/StatusTag.vue'
 
 const handleOpen = ref(false)
+const handleFullscreen = ref(false)
 const handling = ref(false)
 const handleError = ref('')
 const selected = ref(null)
@@ -26,24 +29,36 @@ const columns = [
   { title: '操作', key: 'action', width: 100, fixed: 'right' },
 ]
 
-const { filters, page, pageSize, items, total, loading, error, refresh, search, reset, changePage } =
-  useTableQuery({
-    initialFilters: { q: '', status: 'pending', type: 'all' },
-    pageSize: 10,
-    fetcher: ({ page: pageValue, pageSize: sizeValue, filters: query, signal }) =>
-      api.fees.list(
-        {
-          page: pageValue,
-          pageSize: sizeValue,
-          q: query.q || undefined,
-          status: query.status === 'all' ? undefined : query.status,
-          type: query.type === 'all' ? undefined : query.type,
-        },
-        { signal },
-      ),
-  })
+const {
+  filters,
+  page,
+  pageSize,
+  items,
+  total,
+  loading,
+  error,
+  refresh,
+  search,
+  reset,
+  changePage,
+} = useTableQuery({
+  initialFilters: { q: '', status: 'pending', type: 'all' },
+  pageSize: 10,
+  fetcher: ({ page: pageValue, pageSize: sizeValue, filters: query, signal }) =>
+    api.fees.list(
+      {
+        page: pageValue,
+        pageSize: sizeValue,
+        q: query.q || undefined,
+        status: query.status === 'all' ? undefined : query.status,
+        type: query.type === 'all' ? undefined : query.type,
+      },
+      { signal },
+    ),
+})
 
 function openHandle(record, action) {
+  handleFullscreen.value = false
   selected.value = record
   handleForm.action = action
   handleForm.note = action === 'settle' ? '线下收款，已由馆员确认' : ''
@@ -75,8 +90,7 @@ onMounted(refresh)
 </script>
 
 <template>
-  <JccPagePanel title="费用处理">
-    <template #extra><span class="muted small">共 {{ total }} 条费用记录</span></template>
+  <PagePanel title="费用处理">
     <a-alert
       type="info"
       show-icon
@@ -85,7 +99,15 @@ onMounted(refresh)
     />
 
     <JccQueryBar :loading="loading" @search="search" @reset="reset">
-      <a-input v-model:value="filters.q" class="filter-field" placeholder="读者 / 图书" allow-clear />
+      <template #actions>
+        <span class="muted small">共 {{ total }} 条费用记录</span>
+      </template>
+      <a-input
+        v-model:value="filters.q"
+        class="filter-field"
+        placeholder="读者 / 图书"
+        allow-clear
+      />
       <a-select v-model:value="filters.status" class="filter-field" aria-label="费用状态">
         <a-select-option value="pending">待处理</a-select-option>
         <a-select-option value="settled">已处理</a-select-option>
@@ -136,15 +158,18 @@ onMounted(refresh)
         <template v-else-if="column.key === 'action'">
           <div v-if="record.status === 'pending'" class="table-actions">
             <a-button type="link" size="small" @click="openHandle(record, 'settle')">处理</a-button>
-            <a-button type="link" size="small" danger @click="openHandle(record, 'waive')">豁免</a-button>
+            <a-button type="link" size="small" danger @click="openHandle(record, 'waive')"
+              >豁免</a-button
+            >
           </div>
           <span v-else class="muted small">—</span>
         </template>
       </template>
     </JccTable>
 
-    <a-modal
+    <JccModal
       v-model:open="handleOpen"
+      v-model:fullscreen="handleFullscreen"
       :title="handleForm.action === 'settle' ? '确认费用已处理' : '豁免费用'"
       :confirm-loading="handling"
       :ok-text="handleForm.action === 'settle' ? '确认已处理' : '确认豁免'"
@@ -160,7 +185,9 @@ onMounted(refresh)
         style="margin-bottom: 14px"
       />
       <a-descriptions :column="1" size="small" bordered>
-        <a-descriptions-item label="读者">{{ selected?.readerName }}（{{ selected?.readerNo }}）</a-descriptions-item>
+        <a-descriptions-item label="读者"
+          >{{ selected?.readerName }}（{{ selected?.readerNo }}）</a-descriptions-item
+        >
         <a-descriptions-item label="金额">{{ formatMoney(selected?.amount) }}</a-descriptions-item>
         <a-descriptions-item label="说明">{{ selected?.note || '—' }}</a-descriptions-item>
       </a-descriptions>
@@ -173,6 +200,6 @@ onMounted(refresh)
           />
         </a-form-item>
       </a-form>
-    </a-modal>
-  </JccPagePanel>
+    </JccModal>
+  </PagePanel>
 </template>

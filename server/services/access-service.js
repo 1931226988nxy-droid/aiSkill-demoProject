@@ -1,3 +1,7 @@
+/**
+ * 文件职责：权限定义与导航菜单的动态管理服务。
+ */
+
 import { AppError, ERR } from '../domain/errors.js'
 import { MENU_ICON_OPTIONS } from '../domain/default-menus.js'
 import { writeAudit } from '../lib/audit.js'
@@ -9,9 +13,11 @@ import {
   requiredString,
 } from '../lib/validation.js'
 
+// 权限编码和菜单编码一旦创建就被前端路由/角色矩阵引用，因此格式和不可变性都由服务端强制。
 const PERMISSION_PATTERN = /^[a-z][a-z0-9_.]{2,80}$/
 const MENU_CODE_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]{1,50}$/
 
+// 在完整菜单树中递归定位刚创建/更新的节点，供接口返回完整对象。
 function findMenuNode(nodes, id) {
   for (const node of nodes) {
     if (node.id === id) return node
@@ -101,6 +107,7 @@ export function createAccessService({ db, clock = () => new Date() }) {
   function updatePermission(id, input, actor, ip = '') {
     const current = db.prepare('SELECT * FROM permissions WHERE id = ?').get(id)
     if (!current) throw new AppError(ERR.NOT_FOUND, '权限不存在', 404)
+    // 权限编码不可修改，只允许改展示信息和启用状态；内置权限不能被停用。
     const name = input.name === undefined
       ? current.name
       : requiredString(input.name, 'name', '权限名称', { max: 80 })
@@ -133,6 +140,7 @@ export function createAccessService({ db, clock = () => new Date() }) {
   }
 
   function allMenus() {
+    // 一次取出菜单和权限绑定，在内存中组装成树，避免逐节点查询造成 N+1。
     const menus = db.prepare('SELECT * FROM menus ORDER BY sort_order, id').all()
     const permissionRows = db
       .prepare(
@@ -159,6 +167,7 @@ export function createAccessService({ db, clock = () => new Date() }) {
       permissions: permissionMap.get(row.id) || [],
       children: [],
     }))
+    // parent_id 指向不存在的节点时按根节点处理，避免脏数据导致整棵树丢失。
     const map = new Map(nodes.map((node) => [node.id, node]))
     const roots = []
     for (const node of nodes) {
@@ -177,6 +186,7 @@ export function createAccessService({ db, clock = () => new Date() }) {
     return allMenus()
   }
 
+  // 菜单表单允许直接填写新权限编码：保存菜单时先补权限，再建立菜单-权限关系。
   function ensurePermissions(codes, actor, now, ip) {
     const find = db.prepare('SELECT id FROM permissions WHERE code = ?')
     const insert = db.prepare(
@@ -209,6 +219,7 @@ export function createAccessService({ db, clock = () => new Date() }) {
   }
 
   function validateMenuInput(input, current = null) {
+    // 编辑时类型不可变；新建时必须是 module/group/item 之一。
     const type = current ? current.type : enumValue(input.type, 'type', '菜单类型', ['module', 'group', 'item'])
     const title = requiredString(input.title, 'title', '菜单名称', { max: 60 })
     const description = optionalString(input.description, 'description', '说明', { max: 200 })
@@ -226,6 +237,7 @@ export function createAccessService({ db, clock = () => new Date() }) {
       ? null
       : integer(input.parentId, 'parentId', '上级菜单', { min: 1 })
     let path = null
+    // item 必须指向真实前端路由；这里只校验格式，路径是否注册由前端表单限定。
     if (type === 'item') {
       const rawPath = requiredString(input.path, 'path', '路由路径', { max: 200 })
       if (!rawPath.startsWith('/')) {
@@ -236,6 +248,7 @@ export function createAccessService({ db, clock = () => new Date() }) {
       path = rawPath
     }
     if (type === 'module') parentId = null
+    // 层级约束：module 只能在根；group 必须挂在 module 下；item 可挂 module 或 group。
     if (type === 'group') {
       if (!parentId) {
         throw new AppError(ERR.VALIDATION, '标签分组必须选择所属模块', 422, {
@@ -274,6 +287,7 @@ export function createAccessService({ db, clock = () => new Date() }) {
       })
     }
     const data = validateMenuInput(input)
+    // 模块不保存手写路径，统一由 code 生成，保证前端 /modules/:code 路由稳定。
     const path = data.type === 'module' ? `/modules/${encodeURIComponent(code)}` : data.path
     const now = clock().toISOString()
     try {

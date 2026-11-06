@@ -1,3 +1,7 @@
+/**
+ * 文件职责：读者预约与后台预约队列服务。
+ */
+
 import { AppError, ERR } from '../domain/errors.js'
 import { writeAudit } from '../lib/audit.js'
 import { paged, parsePaging } from '../lib/pagination.js'
@@ -7,6 +11,7 @@ import { releaseReservation } from './reservation-queue.js'
 
 const RESERVATION_SELECT = `SELECT r.*, b.title AS book_title, b.isbn, b.cover_url,
     rp.reader_no, rp.full_name AS reader_name, cp.barcode AS copy_barcode,
+    -- 队列位置 = 同书所有更早的 waiting/ready 记录数 + 1；不依赖内存排序。
     (SELECT COUNT(*) FROM reservations q
       WHERE q.book_id = r.book_id AND q.status IN ('waiting','ready')
         AND (q.created_at < r.created_at OR (q.created_at = r.created_at AND q.id < r.id))
@@ -51,6 +56,7 @@ export function createReservationService({ db, clock = () => new Date(), setting
       .get(bookId)
     if (!book) throw new AppError(ERR.NOT_FOUND, '图书不存在或已下架', 404)
     const reader = db.prepare('SELECT * FROM reader_profiles WHERE id = ?').get(user.readerId)
+    // 预约前同时检查读者证状态、有效期和图书是否已在借，避免无效排队。
     if (!reader || reader.status !== 'active') {
       throw new AppError(ERR.READER_DISABLED, '读者证已停用', 403)
     }
@@ -74,6 +80,7 @@ export function createReservationService({ db, clock = () => new Date(), setting
         reservationId: duplicate.id,
       })
     }
+    // 有可借副本时不允许预约，避免绕过正常借阅流程占用队列。
     const available = db
       .prepare("SELECT COUNT(*) AS count FROM copies WHERE book_id = ? AND status = 'available'")
       .get(bookId)
@@ -179,6 +186,7 @@ export function createReservationService({ db, clock = () => new Date(), setting
   function cancel(id, actor, { allowManage = false, ip = '' } = {}) {
     const row = getDetail(id)
     if (!row) throw new AppError(ERR.NOT_FOUND, '预约记录不存在', 404)
+    // 读者只能取消自己的预约；馆员通过 allowManage 处理全量队列。
     if (!allowManage && row.reader_id !== actor.readerId) {
       throw new AppError(ERR.FORBIDDEN, '不能操作他人的预约', 403)
     }
@@ -187,6 +195,7 @@ export function createReservationService({ db, clock = () => new Date(), setting
     }
     const now = clock()
     return transaction(db, () => {
+      // 若取消的是 ready 预约，releaseReservation 会把保留副本顺延给下一位或恢复可借。
       const result = releaseReservation({
         db,
         reservation: row,

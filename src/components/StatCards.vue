@@ -1,4 +1,5 @@
 <script setup>
+// 文件职责：工作台/报表统计卡片栅格。
 defineProps({
   stats: { type: Array, default: () => [] },
 })

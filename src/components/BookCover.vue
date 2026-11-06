@@ -1,4 +1,5 @@
 <script setup>
+// 文件职责：图书封面：真实 URL 或按书名生成的占位封面。
 import { computed } from 'vue'
 
 const props = defineProps({
@@ -16,6 +17,7 @@ const palette = [
 ]
 
 const initial = computed(() => (props.title || '书').trim().slice(0, 1))
+// 用书名做轻量哈希选择占位封面配色，同一本书每次渲染颜色稳定。
 const background = computed(() => {
   const text = props.title || ''
   let hash = 0

@@ -1,7 +1,9 @@
 <script setup>
+import PagePanel from '@/components/PagePanel.vue'
+// 文件职责：读者借阅记录与自助续借页。
 import { onMounted, ref } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { JccPagePanel, JccQueryBar, JccTable } from '@jcc/shared/components'
+import { JccQueryBar, JccTable } from '@jcc/shared/components'
 import { useTableQuery } from '@jcc/shared/hooks'
 import { api } from '@/api'
 import { getErrorMessage } from '@/api/client'
@@ -21,22 +23,34 @@ const columns = [
   { title: '操作', key: 'action', width: 100, fixed: 'right' },
 ]
 
-const { filters, page, pageSize, items, total, loading, error, refresh, search, reset, changePage } =
-  useTableQuery({
-    initialFilters: { status: 'active' },
-    pageSize: 10,
-    fetcher: ({ page: pageValue, pageSize: sizeValue, filters: query, signal }) =>
-      api.circulation.myLoans(
-        {
-          page: pageValue,
-          pageSize: sizeValue,
-          status: query.status || 'all',
-        },
-        { signal },
-      ),
-  })
+const {
+  filters,
+  page,
+  pageSize,
+  items,
+  total,
+  loading,
+  error,
+  refresh,
+  search,
+  reset,
+  changePage,
+} = useTableQuery({
+  initialFilters: { status: 'active' },
+  pageSize: 10,
+  fetcher: ({ page: pageValue, pageSize: sizeValue, filters: query, signal }) =>
+    api.circulation.myLoans(
+      {
+        page: pageValue,
+        pageSize: sizeValue,
+        status: query.status || 'all',
+      },
+      { signal },
+    ),
+})
 
 function renew(record) {
+  // 前端只做确认提示；续借次数、逾期、预约队列等规则全部由后端重新判断。
   Modal.confirm({
     title: '确认续借？',
     content: `《${record.bookTitle}》将按系统规则顺延借期；如已有预约或已逾期，系统会拒绝续借。`,
@@ -60,10 +74,11 @@ onMounted(refresh)
 </script>
 
 <template>
-  <JccPagePanel title="我的借阅">
-    <template #extra><span class="muted small">共 {{ total }} 条记录</span></template>
-
+  <PagePanel title="我的借阅">
     <JccQueryBar :loading="loading" @search="search" @reset="reset">
+      <template #actions>
+        <span class="muted small">共 {{ total }} 条记录</span>
+      </template>
       <a-select v-model:value="filters.status" class="filter-field" aria-label="借阅状态">
         <a-select-option value="active">当前在借</a-select-option>
         <a-select-option value="overdue">已逾期</a-select-option>
@@ -115,10 +130,7 @@ onMounted(refresh)
         </template>
         <template v-else-if="column.key === 'renewals'">{{ record.renewals }} 次</template>
         <template v-else-if="column.key === 'status'">
-          <StatusTag
-            :status="record.overdue ? 'overdue' : record.status"
-            :map="LOAN_STATUS_META"
-          />
+          <StatusTag :status="record.overdue ? 'overdue' : record.status" :map="LOAN_STATUS_META" />
         </template>
         <template v-else-if="column.key === 'action'">
           <a-button
@@ -134,5 +146,5 @@ onMounted(refresh)
         </template>
       </template>
     </JccTable>
-  </JccPagePanel>
+  </PagePanel>
 </template>

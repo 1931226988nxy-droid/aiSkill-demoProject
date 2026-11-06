@@ -1,7 +1,8 @@
 <script setup>
+import PagePanel from '@/components/PagePanel.vue'
+// 文件职责：按当前角色展示工作台指标、借阅/预约和公告卡片。
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { JccPagePanel } from '@jcc/shared/components'
 import {
   CalendarOutlined,
   DatabaseOutlined,
@@ -32,21 +33,48 @@ const greeting = computed(() => {
 })
 
 const quickLinks = computed(() => {
+  // 快捷入口按当前激活角色的权限动态生成，切换角色后无需刷新页面即可变化。
   const links = []
   if (auth.can('circulation.manage'))
-    links.push({ key: 'staff-desk', label: '借还办理', note: '扫描读者证与条码', icon: SearchOutlined })
+    links.push({
+      key: 'staff-desk',
+      label: '借还办理',
+      note: '扫描读者证与条码',
+      icon: SearchOutlined,
+    })
   if (auth.can('book.manage'))
-    links.push({ key: 'catalog-manage', label: '图书编目', note: '新增或维护书目', icon: EditOutlined })
+    links.push({
+      key: 'catalog-manage',
+      label: '图书编目',
+      note: '新增或维护书目',
+      icon: EditOutlined,
+    })
   if (auth.can('copy.manage'))
-    links.push({ key: 'copies-manage', label: '馆藏管理', note: '副本入库与盘点', icon: DatabaseOutlined })
+    links.push({
+      key: 'copies-manage',
+      label: '馆藏管理',
+      note: '副本入库与盘点',
+      icon: DatabaseOutlined,
+    })
   if (auth.can('reader.manage'))
-    links.push({ key: 'readers-manage', label: '读者管理', note: '读者档案与状态', icon: TeamOutlined })
+    links.push({
+      key: 'readers-manage',
+      label: '读者管理',
+      note: '读者档案与状态',
+      icon: TeamOutlined,
+    })
   if (auth.can('reservation.manage'))
-    links.push({ key: 'reservation-desk', label: '预约处理', note: '待取书与队列', icon: CalendarOutlined })
+    links.push({
+      key: 'reservation-desk',
+      label: '预约处理',
+      note: '待取书与队列',
+      icon: CalendarOutlined,
+    })
   return links
 })
 
 async function load() {
+  // 工作台接口会根据当前角色返回不同聚合数据（读者看个人借阅，馆员看运营指标）。
   loading.value = true
   errorText.value = ''
   try {
@@ -62,21 +90,30 @@ onMounted(load)
 </script>
 
 <template>
-  <JccPagePanel :title="`${greeting}，${auth.user?.displayName || ''}`">
+  <PagePanel :title="`${greeting}，${auth.user?.displayName || ''}`">
     <template #extra>
-      <a-space wrap>
-        <span class="muted small">服务日期：{{ formatDateTime(new Date(), { dateOnly: true }) }}</span>
-        <a-button type="primary" @click="router.push('/catalog')">
-          <SearchOutlined />
-          检索图书
-        </a-button>
-      </a-space>
+      <div class="fs-toolbar">
+        <div class="jcc-toolbar-actions">
+          <a-button type="primary" @click="router.push('/catalog')">
+            <SearchOutlined />
+            检索图书
+          </a-button>
+        </div>
+        <span class="muted small"
+          >服务日期：{{ formatDateTime(new Date(), { dateOnly: true }) }}</span
+        >
+      </div>
     </template>
 
     <PageBody mode="scroll" label="工作台内容">
       <a-skeleton v-if="loading" active :paragraph="{ rows: 10 }" />
 
-      <a-result v-else-if="errorText" status="warning" title="工作台加载失败" :sub-title="errorText">
+      <a-result
+        v-else-if="errorText"
+        status="warning"
+        title="工作台加载失败"
+        :sub-title="errorText"
+      >
         <template #extra>
           <a-button type="primary" @click="load">重试</a-button>
         </template>
@@ -136,7 +173,11 @@ onMounted(load)
                       <div>
                         <div class="notice-item__title">{{ item.bookTitle }}</div>
                         <div class="muted small">
-                          {{ item.status === 'ready' ? '已到书，等待取书' : `排队第 ${item.queuePosition} 位` }}
+                          {{
+                            item.status === 'ready'
+                              ? '已到书，等待取书'
+                              : `排队第 ${item.queuePosition} 位`
+                          }}
                         </div>
                       </div>
                       <a-tag :color="item.status === 'ready' ? 'orange' : 'blue'">
@@ -233,7 +274,10 @@ onMounted(load)
                 <a-button type="link" @click="router.push('/staff/reservations')">处理</a-button>
               </div>
               <div class="section-card__body">
-                <a-empty v-if="!data.alerts?.readyReservations?.length" description="暂无待取预约" />
+                <a-empty
+                  v-if="!data.alerts?.readyReservations?.length"
+                  description="暂无待取预约"
+                />
                 <div v-else class="notice-list">
                   <div
                     v-for="item in data.alerts.readyReservations"
@@ -278,5 +322,5 @@ onMounted(load)
         </template>
       </div>
     </PageBody>
-  </JccPagePanel>
+  </PagePanel>
 </template>

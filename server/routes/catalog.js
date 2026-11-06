@@ -1,3 +1,7 @@
+/**
+ * 文件职责：图书、分类、作者、副本和盘点接口。
+ */
+
 import { Router } from 'express'
 import { numericId, requestContext } from './helpers.js'
 
@@ -25,7 +29,9 @@ export function createCatalogRouter({ services, middleware }) {
 
   router.patch('/books/:id', requirePermission('book.manage'), (req, res) => {
     const { actor, ip } = requestContext(req)
-    res.json(services.catalog.updateBook(numericId(req.params.id, '图书编号'), req.body || {}, actor, ip))
+    res.json(
+      services.catalog.updateBook(numericId(req.params.id, '图书编号'), req.body || {}, actor, ip),
+    )
   })
 
   router.post('/books/:id/off-shelf', requirePermission('book.manage'), (req, res) => {
@@ -40,6 +46,11 @@ export function createCatalogRouter({ services, middleware }) {
     )
   })
 
+  router.post('/books/:id/on-shelf', requirePermission('book.manage'), (req, res) => {
+    const { actor, ip } = requestContext(req)
+    res.json(services.catalog.onShelfBook(numericId(req.params.id, '图书编号'), actor, ip))
+  })
+
   router.get('/categories', requirePermission('book.read'), (req, res) => {
     res.json({ items: services.catalog.listCategories() })
   })
@@ -47,6 +58,23 @@ export function createCatalogRouter({ services, middleware }) {
   router.post('/categories', requirePermission('book.manage'), (req, res) => {
     const { actor, ip } = requestContext(req)
     res.status(201).json(services.catalog.createCategory(req.body || {}, actor, ip))
+  })
+
+  router.patch('/categories/:id', requirePermission('book.manage'), (req, res) => {
+    const { actor, ip } = requestContext(req)
+    res.json(
+      services.catalog.updateCategory(
+        numericId(req.params.id, '分类编号'),
+        req.body || {},
+        actor,
+        ip,
+      ),
+    )
+  })
+
+  router.delete('/categories/:id', requirePermission('book.manage'), (req, res) => {
+    const { actor, ip } = requestContext(req)
+    res.json(services.catalog.deleteCategory(numericId(req.params.id, '分类编号'), actor, ip))
   })
 
   router.get('/authors', requirePermission('book.read'), (req, res) => {

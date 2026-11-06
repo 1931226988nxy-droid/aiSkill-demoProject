@@ -1,6 +1,8 @@
 <script setup>
+import PagePanel from '@/components/PagePanel.vue'
+// 文件职责：读者个人费用查询页。
 import { onMounted } from 'vue'
-import { JccPagePanel, JccQueryBar, JccTable } from '@jcc/shared/components'
+import { JccQueryBar, JccTable } from '@jcc/shared/components'
 import { useTableQuery } from '@jcc/shared/hooks'
 import { api } from '@/api'
 import { FEE_STATUS_META, FEE_TYPE_META } from '@/constants'
@@ -17,27 +19,37 @@ const columns = [
   { title: '处理时间', key: 'handledAt', width: 160 },
 ]
 
-const { filters, page, pageSize, items, total, loading, error, refresh, search, reset, changePage } =
-  useTableQuery({
-    initialFilters: { status: 'all' },
-    pageSize: 10,
-    fetcher: ({ page: pageValue, pageSize: sizeValue, filters: query, signal }) =>
-      api.fees.my(
-        {
-          page: pageValue,
-          pageSize: sizeValue,
-          status: query.status || 'all',
-        },
-        { signal },
-      ),
-  })
+const {
+  filters,
+  page,
+  pageSize,
+  items,
+  total,
+  loading,
+  error,
+  refresh,
+  search,
+  reset,
+  changePage,
+} = useTableQuery({
+  initialFilters: { status: 'all' },
+  pageSize: 10,
+  fetcher: ({ page: pageValue, pageSize: sizeValue, filters: query, signal }) =>
+    api.fees.my(
+      {
+        page: pageValue,
+        pageSize: sizeValue,
+        status: query.status || 'all',
+      },
+      { signal },
+    ),
+})
 
 onMounted(refresh)
 </script>
 
 <template>
-  <JccPagePanel title="我的费用">
-    <template #extra><span class="muted small">共 {{ total }} 条记录</span></template>
+  <PagePanel title="我的费用">
     <a-alert
       type="info"
       show-icon
@@ -46,6 +58,9 @@ onMounted(refresh)
     />
 
     <JccQueryBar :loading="loading" @search="search" @reset="reset">
+      <template #actions>
+        <span class="muted small">共 {{ total }} 条记录</span>
+      </template>
       <a-select v-model:value="filters.status" class="filter-field" aria-label="费用状态">
         <a-select-option value="all">全部状态</a-select-option>
         <a-select-option value="pending">待处理</a-select-option>
@@ -89,5 +104,5 @@ onMounted(refresh)
         </template>
       </template>
     </JccTable>
-  </JccPagePanel>
+  </PagePanel>
 </template>

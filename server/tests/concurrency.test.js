@@ -1,3 +1,7 @@
+/**
+ * 文件职责：并发借阅一致性测试。
+ */
+
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { apiRequest, createTestContext, login, startTestServer } from './helpers.js'

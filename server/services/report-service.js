@@ -1,3 +1,7 @@
+/**
+ * 文件职责：统计指标、热门图书、分类/趋势和 CSV 报表。
+ */
+
 import { AppError, ERR } from '../domain/errors.js'
 import {
   startOfNextShanghaiDate,

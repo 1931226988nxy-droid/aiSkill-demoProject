@@ -1,7 +1,14 @@
+/**
+ * 文件职责：页面路由、权限元信息以及登录/角色/读者页面守卫。
+ */
+
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { siteConfig } from '@/site-config'
+import { forbiddenRecoveryPath } from '@/navigation'
 
 const routes = [
+  // 公开路由：登录/注册不经过应用壳层，也不触发登录守卫。
   {
     path: '/login',
     name: 'login',
@@ -17,6 +24,7 @@ const routes = [
   {
     path: '/',
     component: () => import('@/layouts/AppLayout.vue'),
+    // 以下页面全部位于固定应用壳层内；meta.menu 仅用于侧栏高亮，不决定访问权限。
     children: [
       {
         path: '',
@@ -192,6 +200,7 @@ const routes = [
       {
         path: 'modules/:code',
         name: 'module',
+        // 模块页本身只校验登录；具体模块是否可见由动态导航和 ModuleView 判断。
         component: () => import('@/views/ModuleView.vue'),
         meta: { title: '功能模块' },
       },
@@ -231,20 +240,33 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
+  // 首次进入先恢复会话和动态导航；初始化只做一次，后续导航直接读 Pinia。
   if (!auth.initialized) await auth.load()
-  document.title = `${to.meta.title || '图书管理系统'} · 图书管理系统`
+  document.title = `${to.meta.title || siteConfig.title} · ${siteConfig.title}`
   if (to.meta.public) {
     if (auth.isAuthenticated) return { name: 'workbench' }
     return true
   }
   if (!auth.isAuthenticated) {
+    // 保留原始地址，登录成功后由登录页跳回。
     return { name: 'login', query: { redirect: to.fullPath } }
   }
-  if (to.meta.permission && !auth.can(to.meta.permission)) {
-    return { name: 'forbidden' }
+  if (to.name === 'forbidden') {
+    // 旧版 403 地址没有目标信息；权限恢复后也无需继续停留在错误页。
+    const recoveryPath = forbiddenRecoveryPath(to.query.from, {
+      resolveRoute: router.resolve,
+      can: auth.can,
+      isReader: auth.isReader,
+    })
+    return recoveryPath || true
   }
+  // 读者自助页面还要求当前激活角色就是 reader，避免馆员误入个人借阅页。
   if (to.meta.readerOnly && !auth.isReader) {
-    return { name: 'forbidden' }
+    return { name: 'forbidden', query: { reason: 'reader-only', from: to.fullPath } }
+  }
+  // 页面权限是后端权限的前端第一道门；真正的资源校验仍由 API 完成。
+  if (to.meta.permission && !auth.can(to.meta.permission)) {
+    return { name: 'forbidden', query: { reason: 'permission', from: to.fullPath } }
   }
   return true
 })

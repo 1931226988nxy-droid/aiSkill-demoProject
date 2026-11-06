@@ -13,6 +13,7 @@ export function createNotificationService({ db, clock = () => new Date(), extern
     dedupeKey = null,
   }) {
     const now = clock().toISOString()
+    // dedupeKey 唯一索引让同一业务事件重复扫描时只落一条站内通知。
     const result = db
       .prepare(
         `INSERT OR IGNORE INTO notifications
@@ -25,6 +26,7 @@ export function createNotificationService({ db, clock = () => new Date(), extern
       .prepare('SELECT * FROM notifications WHERE id = ?')
       .get(Number(result.lastInsertRowid))
     if (externalAdapter?.send) {
+      // 外部渠道异步发送且失败不回滚主业务；站内通知已经落库，用户至少能看到。
       Promise.resolve(externalAdapter.send(notification)).catch(() => {
         // 外部渠道失败不能回滚已经完成的借阅/预约业务。
       })

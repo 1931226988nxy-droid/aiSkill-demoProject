@@ -1,5 +1,9 @@
+-- 初始业务骨架：RBAC 基础、读者、馆藏、借还、预约、费用、通知、公告、设置与审计。
+-- 时间列统一保存 UTC ISO 字符串；金额列统一使用“分”为单位，避免浮点误差。
+
 PRAGMA foreign_keys = ON;
 
+-- 角色、权限及角色权限关系：用户通过 role_id 绑定主角色。
 CREATE TABLE roles (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   code TEXT NOT NULL UNIQUE,
@@ -22,6 +26,7 @@ CREATE TABLE role_permissions (
   PRIMARY KEY (role_id, permission_id)
 );
 
+-- 用户与会话：密码只保存 scrypt 哈希；会话只保存令牌哈希。
 CREATE TABLE users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL COLLATE NOCASE UNIQUE,
@@ -45,6 +50,7 @@ CREATE TABLE sessions (
 CREATE INDEX idx_sessions_user ON sessions(user_id);
 CREATE INDEX idx_sessions_expires ON sessions(expires_at);
 
+-- 读者档案：与登录账号一一对应，读者证状态独立于账号状态。
 CREATE TABLE reader_profiles (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
@@ -60,6 +66,7 @@ CREATE TABLE reader_profiles (
   updated_at TEXT NOT NULL
 );
 
+-- 图书、作者、分类与多对多作者关系。
 CREATE TABLE authors (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL COLLATE NOCASE UNIQUE,
@@ -107,6 +114,7 @@ CREATE TABLE book_authors (
 );
 CREATE INDEX idx_book_authors_author ON book_authors(author_id);
 
+-- 馆藏副本与状态变更日志；副本才是借还的实际对象。
 CREATE TABLE copies (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
@@ -135,6 +143,7 @@ CREATE TABLE copy_status_logs (
 );
 CREATE INDEX idx_copy_logs_copy ON copy_status_logs(copy_id, created_at);
 
+-- 借阅记录：部分唯一索引确保同一副本/同一读者同一本书只能有一条在借记录。
 CREATE TABLE loans (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   copy_id INTEGER NOT NULL REFERENCES copies(id),
@@ -157,6 +166,7 @@ CREATE INDEX idx_loans_reader ON loans(reader_id, borrowed_at);
 CREATE INDEX idx_loans_due ON loans(due_at);
 CREATE INDEX idx_loans_status ON loans(status);
 
+-- 预约队列：同书同读者最多一条 waiting/ready 记录，按创建时间排序。
 CREATE TABLE reservations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
@@ -175,6 +185,7 @@ CREATE UNIQUE INDEX ux_reservations_active_reader
 CREATE INDEX idx_reservations_book_status ON reservations(book_id, status, created_at);
 CREATE INDEX idx_reservations_reader ON reservations(reader_id, created_at);
 
+-- 费用：逾期、遗失、损坏和手工费用；同一借阅同一类型只允许一条记录。
 CREATE TABLE fees (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   reader_id INTEGER NOT NULL REFERENCES reader_profiles(id) ON DELETE CASCADE,
@@ -192,6 +203,7 @@ CREATE UNIQUE INDEX ux_fees_loan_type ON fees(loan_id, type) WHERE loan_id IS NO
 CREATE INDEX idx_fees_reader_status ON fees(reader_id, status);
 CREATE INDEX idx_fees_created ON fees(created_at);
 
+-- 站内通知、公告、系统参数与只读审计日志。
 CREATE TABLE notifications (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

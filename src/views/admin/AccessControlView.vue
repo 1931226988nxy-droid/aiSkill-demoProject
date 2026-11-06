@@ -1,8 +1,10 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import PagePanel from '@/components/PagePanel.vue'
+// 文件职责：权限定义与动态菜单管理页。
+import { computed, onMounted, ref } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { useRouter } from 'vue-router'
-import { JccPagePanel } from '@jcc/shared/components'
+import { JccFormModal } from '@jcc/shared/components'
 import { PlusOutlined, RightOutlined } from '@ant-design/icons-vue'
 import { api } from '@/api'
 import { getErrorMessage } from '@/api/client'
@@ -19,11 +21,8 @@ const expandedMenuIds = ref(new Set())
 const permissionKeyword = ref('')
 const permissionModalOpen = ref(false)
 const permissionMode = ref('create')
-const permissionSaving = ref(false)
-const permissionError = ref('')
-const permissionFormRef = ref()
 const editingPermission = ref(null)
-const permissionForm = reactive({
+const permissionInitialValues = ref({
   code: '',
   name: '',
   group: '',
@@ -32,11 +31,8 @@ const permissionForm = reactive({
 })
 const menuModalOpen = ref(false)
 const menuMode = ref('create')
-const menuSaving = ref(false)
-const menuError = ref('')
-const menuFormRef = ref()
 const editingMenu = ref(null)
-const menuForm = reactive({
+const menuInitialValues = ref({
   type: 'item',
   parentId: null,
   code: '',
@@ -63,20 +59,26 @@ const permissionRules = {
 }
 
 const menuRules = computed(() => ({
-  code: menuMode.value === 'create'
-    ? [
-        { required: true, message: '请输入菜单编码', trigger: 'blur' },
-        {
-          pattern: /^[a-zA-Z][a-zA-Z0-9_-]{1,50}$/,
-          message: '字母开头，仅含字母、数字、下划线或连字符',
-          trigger: 'blur',
-        },
-      ]
-    : [],
+  code:
+    menuMode.value === 'create'
+      ? [
+          { required: true, message: '请输入菜单编码', trigger: 'blur' },
+          {
+            pattern: /^[a-zA-Z][a-zA-Z0-9_-]{1,50}$/,
+            message: '字母开头，仅含字母、数字、下划线或连字符',
+            trigger: 'blur',
+          },
+        ]
+      : [],
   title: [{ required: true, message: '请输入菜单名称', trigger: 'blur' }],
-  path: menuForm.type === 'item'
-    ? [{ required: true, message: '请选择已注册的路由', trigger: 'change' }]
-    : [],
+  path:
+    menuInitialValues.value.type === 'item'
+      ? [{ required: true, message: '请选择已注册的路由', trigger: 'change' }]
+      : [],
+  parentId:
+    menuInitialValues.value.type === 'group'
+      ? [{ required: true, message: '请选择标签分组所属模块', trigger: 'change' }]
+      : [],
 }))
 
 const filteredPermissions = computed(() => {
@@ -94,6 +96,7 @@ const activePermissions = computed(() =>
 )
 
 const routeOptions = computed(() => {
+  // 菜单只能指向已注册的静态页面；动态详情页（含 : 参数）不能作为菜单入口。
   const seen = new Set()
   return router
     .getRoutes()
@@ -117,10 +120,10 @@ const parentOptions = computed(() => {
   const result = []
   function walk(nodes) {
     for (const node of nodes) {
-      if (menuForm.type === 'group' && node.type === 'module') {
+      if (menuInitialValues.value.type === 'group' && node.type === 'module') {
         result.push({ id: node.id, label: `${node.title} · 模块` })
       }
-      if (menuForm.type === 'item' && ['module', 'group'].includes(node.type)) {
+      if (menuInitialValues.value.type === 'item' && ['module', 'group'].includes(node.type)) {
         result.push({
           id: node.id,
           label: `${node.title} · ${node.type === 'module' ? '模块' : '标签'}`,
@@ -142,6 +145,7 @@ function isMenuExpanded(node) {
 }
 
 function toggleMenu(node) {
+  // 用新 Set 替换旧值，确保 Vue 能观察到集合变化并重新渲染。
   const next = new Set(expandedMenuIds.value)
   if (next.has(node.id)) next.delete(node.id)
   else next.add(node.id)
@@ -186,9 +190,7 @@ async function loadMenus() {
   const data = await api.admin.menus()
   menus.value = data.items
   const validIds = expandableMenuIds(menus.value)
-  expandedMenuIds.value = new Set(
-    [...expandedMenuIds.value].filter((id) => validIds.has(id)),
-  )
+  expandedMenuIds.value = new Set([...expandedMenuIds.value].filter((id) => validIds.has(id)))
 }
 
 async function load() {
@@ -205,92 +207,85 @@ async function load() {
 function openCreatePermission() {
   permissionMode.value = 'create'
   editingPermission.value = null
-  permissionError.value = ''
-  Object.assign(permissionForm, {
+  permissionInitialValues.value = {
     code: '',
     name: '',
     group: '',
     description: '',
     status: 'active',
-  })
+  }
   permissionModalOpen.value = true
 }
 
 function openEditPermission(record) {
   permissionMode.value = 'edit'
   editingPermission.value = record
-  permissionError.value = ''
-  Object.assign(permissionForm, {
+  permissionInitialValues.value = {
     code: record.code,
     name: record.name,
     group: record.group,
     description: record.description,
     status: record.status,
-  })
+  }
   permissionModalOpen.value = true
 }
 
-async function savePermission() {
-  if (permissionSaving.value) return
-  permissionError.value = ''
-  try {
-    await permissionFormRef.value.validate()
-  } catch {
-    return
+function submitPermission(values, { signal }) {
+  if (permissionMode.value === 'create') {
+    return api.admin.createPermission(
+      {
+        code: values.code,
+        name: values.name,
+        group: values.group,
+        description: values.description,
+      },
+      { signal },
+    )
   }
-  permissionSaving.value = true
-  try {
-    if (permissionMode.value === 'create') {
-      await api.admin.createPermission({
-        code: permissionForm.code,
-        name: permissionForm.name,
-        group: permissionForm.group,
-        description: permissionForm.description,
-      })
-      message.success('权限已创建，可继续分配给角色')
-    } else {
-      await api.admin.updatePermission(editingPermission.value.id, {
-        name: permissionForm.name,
-        group: permissionForm.group,
-        description: permissionForm.description,
-        status: permissionForm.status,
-      })
-      message.success('权限已更新')
-    }
-    permissionModalOpen.value = false
-    await loadPermissions()
-    await auth.loadNavigation()
-  } catch (error) {
-    permissionError.value = getErrorMessage(error)
-  } finally {
-    permissionSaving.value = false
-  }
+  return api.admin.updatePermission(
+    editingPermission.value.id,
+    {
+      name: values.name,
+      group: values.group,
+      description: values.description,
+      status: values.status,
+    },
+    { signal },
+  )
+}
+
+async function afterPermissionSaved() {
+  message.success(permissionMode.value === 'create' ? '权限已创建，可继续分配给角色' : '权限已更新')
+  await Promise.all([loadPermissions(), auth.loadNavigation()])
 }
 
 function openMenuCreate(type, parent = null) {
   menuMode.value = 'create'
   editingMenu.value = null
-  menuError.value = ''
-  Object.assign(menuForm, {
+  menuInitialValues.value = {
     type,
     parentId: parent?.id || null,
     code: '',
     title: '',
     path: '',
-    icon: type === 'module' ? 'AppstoreOutlined' : type === 'group' ? 'FileTextOutlined' : 'AppstoreOutlined',
+    icon:
+      type === 'module'
+        ? 'AppstoreOutlined'
+        : type === 'group'
+          ? 'FileTextOutlined'
+          : 'AppstoreOutlined',
     description: '',
     sortOrder: 0,
     status: 'active',
     permissions: [],
-  })
+  }
   menuModalOpen.value = true
 }
 
 function openMenuEdit(node, type) {
   menuMode.value = 'edit'
   editingMenu.value = { ...node, type }
-  menuError.value = ''
-  Object.assign(menuForm, {
+  menuInitialValues.value = {
     type,
     parentId: node.parentId,
     code: node.code,
@@ -301,63 +296,46 @@ function openMenuEdit(node, type) {
     sortOrder: node.sortOrder || 0,
     status: node.status || 'active',
     permissions: [...(node.permissions || [])],
-  })
+  }
   menuModalOpen.value = true
 }
 
 function validatePath(value) {
+  // 双重校验：路由表能解析出匹配记录，且路径来自当前允许的静态路由白名单。
   const match = router.resolve(value)
   return match.matched.length > 0 && routeOptions.value.some((item) => item.value === value)
 }
 
-async function saveMenu() {
-  if (menuSaving.value) return
-  menuError.value = ''
-  try {
-    await menuFormRef.value.validate()
-  } catch {
-    return
+function submitMenu(values, { signal }) {
+  if (values.type === 'item' && !validatePath(values.path)) {
+    throw new Error('请选择已注册且可用的路由路径')
   }
-  if (menuForm.type === 'item' && !validatePath(menuForm.path)) {
-    menuError.value = '请选择已注册且可用的路由路径'
-    return
+  const payload = {
+    type: values.type,
+    parentId: values.parentId,
+    code: values.code,
+    title: values.title,
+    path: values.path,
+    icon: values.icon,
+    description: values.description,
+    sortOrder: values.sortOrder,
+    status: values.status,
+    permissions: values.permissions,
   }
-  if (menuForm.type === 'group' && !menuForm.parentId) {
-    menuError.value = '请选择标签分组所属模块'
-    return
-  }
-  menuSaving.value = true
-  try {
-    const payload = {
-      type: menuForm.type,
-      parentId: menuForm.parentId,
-      code: menuForm.code,
-      title: menuForm.title,
-      path: menuForm.path,
-      icon: menuForm.icon,
-      description: menuForm.description,
-      sortOrder: menuForm.sortOrder,
-      status: menuForm.status,
-      permissions: menuForm.permissions,
-    }
-    const result = menuMode.value === 'create'
-      ? await api.admin.createMenu(payload)
-      : await api.admin.updateMenu(editingMenu.value.id, payload)
-    const autoCreated = result.autoCreated || []
-    message.success(
-      autoCreated.length
-        ? `菜单已保存，并自动创建权限：${autoCreated.join('、')}`
-        : '菜单已保存',
-    )
-    menuModalOpen.value = false
-    await Promise.all([loadMenus(), loadPermissions(), auth.loadNavigation()])
-    if (menuMode.value === 'create' && menuForm.parentId) {
-      expandedMenuIds.value = new Set([...expandedMenuIds.value, menuForm.parentId])
-    }
-  } catch (error) {
-    menuError.value = getErrorMessage(error)
-  } finally {
-    menuSaving.value = false
+  return menuMode.value === 'create'
+    ? api.admin.createMenu(payload, { signal })
+    : api.admin.updateMenu(editingMenu.value.id, payload, { signal })
+}
+
+async function afterMenuSaved(result, values) {
+  const autoCreated = result.autoCreated || []
+  message.success(
+    autoCreated.length ? `菜单已保存，并自动创建权限：${autoCreated.join('、')}` : '菜单已保存',
+  )
+  // 菜单改变后同时刷新权限表、菜单树和当前侧栏，保证配置立即生效。
+  await Promise.all([loadMenus(), loadPermissions(), auth.loadNavigation()])
+  if (menuMode.value === 'create' && values.parentId) {
+    expandedMenuIds.value = new Set([...expandedMenuIds.value, values.parentId])
   }
 }
 
@@ -388,36 +366,22 @@ onMounted(load)
 </script>
 
 <template>
-  <JccPagePanel title="权限与菜单">
-    <template #extra>
-      <a-space v-if="activeTab === 'permissions'" wrap>
-        <a-button type="primary" @click="openCreatePermission">
-          <PlusOutlined />
-          新增权限
-        </a-button>
-      </a-space>
-      <a-space v-else-if="auth.can('menu.manage')" wrap>
-        <a-button @click="openMenuCreate('module')">
-          <PlusOutlined />
-          新增模块
-        </a-button>
-        <a-button type="primary" @click="openMenuCreate('item')">
-          <PlusOutlined />
-          新增功能
-        </a-button>
-      </a-space>
-    </template>
-
+  <PagePanel title="权限与菜单">
     <a-tabs v-model:activeKey="activeTab">
       <a-tab-pane key="permissions" tab="权限管理">
         <div class="access-toolbar">
-          <a-input
-            v-model:value="permissionKeyword"
-            class="filter-field--wide"
-            placeholder="搜索权限编码、名称或分组"
-            allow-clear
-          />
-          <span class="muted small">共 {{ filteredPermissions.length }} 个权限</span>
+          <a-button type="primary" @click="openCreatePermission">
+            <PlusOutlined />新增权限
+          </a-button>
+          <div class="access-toolbar__search">
+            <a-input
+              v-model:value="permissionKeyword"
+              class="filter-field--wide"
+              placeholder="搜索权限编码、名称或分组"
+              allow-clear
+            />
+            <span class="muted small">共 {{ filteredPermissions.length }} 个权限</span>
+          </div>
         </div>
         <div class="access-table-scroll">
           <a-spin :spinning="loading">
@@ -430,7 +394,9 @@ onMounted(load)
             >
               <a-table-column title="分组" data-index="group" key="group" width="100" />
               <a-table-column title="权限编码" key="code" width="190">
-                <template #default="{ record }"><code>{{ record.code }}</code></template>
+                <template #default="{ record }"
+                  ><code>{{ record.code }}</code></template
+                >
               </a-table-column>
               <a-table-column title="名称" data-index="name" key="name" />
               <a-table-column title="说明" data-index="description" key="description" />
@@ -461,6 +427,14 @@ onMounted(load)
       </a-tab-pane>
 
       <a-tab-pane key="menus" tab="菜单管理">
+        <div v-if="auth.can('menu.manage')" class="access-toolbar">
+          <a-space wrap>
+            <a-button @click="openMenuCreate('module')"><PlusOutlined />新增模块</a-button>
+            <a-button type="primary" @click="openMenuCreate('item')"
+              ><PlusOutlined />新增功能</a-button
+            >
+          </a-space>
+        </div>
         <a-alert
           v-if="!auth.can('menu.manage')"
           type="warning"
@@ -477,7 +451,10 @@ onMounted(load)
             <div v-for="moduleNode in menus" :key="moduleNode.id" class="menu-block">
               <div
                 class="menu-row menu-row--module"
-                :class="{ 'is-disabled': moduleNode.status !== 'active', 'is-expandable': moduleNode.children?.length }"
+                :class="{
+                  'is-disabled': moduleNode.status !== 'active',
+                  'is-expandable': moduleNode.children?.length,
+                }"
                 @click="moduleNode.children?.length && toggleMenu(moduleNode)"
               >
                 <button
@@ -527,7 +504,11 @@ onMounted(load)
                   >
                     加功能
                   </a-button>
-                  <a-button type="link" size="small" @click="openMenuEdit(moduleNode, moduleNode.type)">
+                  <a-button
+                    type="link"
+                    size="small"
+                    @click="openMenuEdit(moduleNode, moduleNode.type)"
+                  >
                     编辑
                   </a-button>
                   <a-button type="link" size="small" danger @click="deleteMenu(moduleNode)">
@@ -548,7 +529,10 @@ onMounted(load)
                 >
                   <div
                     class="menu-row menu-row--group"
-                    :class="{ 'is-disabled': groupNode.status !== 'active', 'is-expandable': groupNode.children?.length }"
+                    :class="{
+                      'is-disabled': groupNode.status !== 'active',
+                      'is-expandable': groupNode.children?.length,
+                    }"
                     @click="groupNode.children?.length && toggleMenu(groupNode)"
                   >
                     <button
@@ -590,7 +574,10 @@ onMounted(load)
                       </a-button>
                     </div>
                   </div>
-                  <div v-if="groupNode.children?.length && isMenuExpanded(groupNode)" :id="`menu-children-${groupNode.id}`">
+                  <div
+                    v-if="groupNode.children?.length && isMenuExpanded(groupNode)"
+                    :id="`menu-children-${groupNode.id}`"
+                  >
                     <div
                       v-for="itemNode in menuChildren(groupNode, 'item')"
                       :key="itemNode.id"
@@ -665,73 +652,77 @@ onMounted(load)
       </a-tab-pane>
     </a-tabs>
 
-    <a-modal
+    <JccFormModal
       v-model:open="permissionModalOpen"
       :title="permissionMode === 'create' ? '新增权限' : '编辑权限'"
-      :confirm-loading="permissionSaving"
-      ok-text="保存"
-      cancel-text="取消"
-      @ok="savePermission"
+      :initial-values="permissionInitialValues"
+      :rules="permissionRules"
+      :submit="submitPermission"
+      @saved="afterPermissionSaved"
     >
-      <a-alert v-if="permissionError" type="error" show-icon :message="permissionError" style="margin-bottom: 14px" />
-      <a-form ref="permissionFormRef" :model="permissionForm" :rules="permissionRules" layout="vertical">
-        <a-form-item label="权限编码" name="code" extra="编码创建后不可修改；菜单表单可直接输入新编码自动创建权限">
-          <a-input v-model:value="permissionForm.code" :disabled="permissionMode === 'edit'" />
+      <template #default="{ model }">
+        <a-form-item
+          label="权限编码"
+          name="code"
+          extra="编码创建后不可修改；菜单表单可直接输入新编码自动创建权限"
+        >
+          <a-input v-model:value="model.code" :disabled="permissionMode === 'edit'" />
         </a-form-item>
         <div class="form-grid">
           <a-form-item label="权限名称" name="name">
-            <a-input v-model:value="permissionForm.name" />
+            <a-input v-model:value="model.name" />
           </a-form-item>
           <a-form-item label="分组" name="group">
-            <a-input v-model:value="permissionForm.group" placeholder="如 馆藏、系统" />
+            <a-input v-model:value="model.group" placeholder="如 馆藏、系统" />
           </a-form-item>
         </div>
         <a-form-item label="说明" name="description">
-          <a-textarea v-model:value="permissionForm.description" :rows="2" />
+          <a-textarea v-model:value="model.description" :rows="2" />
         </a-form-item>
         <a-form-item v-if="permissionMode === 'edit'" label="状态">
-          <a-select v-model:value="permissionForm.status" :disabled="editingPermission?.isSystem">
+          <a-select v-model:value="model.status" :disabled="editingPermission?.isSystem">
             <a-select-option value="active">启用</a-select-option>
             <a-select-option value="disabled">停用</a-select-option>
           </a-select>
           <div v-if="editingPermission?.isSystem" class="form-help">内置权限不能停用。</div>
         </a-form-item>
-      </a-form>
-    </a-modal>
+      </template>
+    </JccFormModal>
 
-    <a-modal
+    <JccFormModal
       v-model:open="menuModalOpen"
       :title="menuMode === 'create' ? '新增菜单' : '编辑菜单'"
-      :confirm-loading="menuSaving"
-      ok-text="保存"
-      cancel-text="取消"
-      :mask-closable="false"
+      :initial-values="menuInitialValues"
+      :rules="menuRules"
+      :submit="submitMenu"
       width="min(760px, 94vw)"
-      @ok="saveMenu"
+      @saved="afterMenuSaved"
     >
-      <a-alert v-if="menuError" type="error" show-icon :message="menuError" style="margin-bottom: 14px" />
-      <a-form ref="menuFormRef" :model="menuForm" :rules="menuRules" layout="vertical">
+      <template #default="{ model }">
         <a-row :gutter="16">
           <a-col :xs="24" :sm="12">
             <a-form-item label="菜单类型">
-              <a-input :value="{ module: '模块', group: '标签分组', item: '功能菜单' }[menuForm.type]" disabled />
+              <a-input
+                :value="{ module: '模块', group: '标签分组', item: '功能菜单' }[model.type]"
+                disabled
+              />
             </a-form-item>
           </a-col>
           <a-col :xs="24" :sm="12">
             <a-form-item label="菜单编码" name="code" extra="创建后不可修改">
-              <a-input v-model:value="menuForm.code" :disabled="menuMode === 'edit'" />
+              <a-input v-model:value="model.code" :disabled="menuMode === 'edit'" />
             </a-form-item>
           </a-col>
         </a-row>
         <a-row :gutter="16">
           <a-col :xs="24" :sm="12">
             <a-form-item label="菜单名称" name="title">
-              <a-input v-model:value="menuForm.title" />
+              <a-input v-model:value="model.title" />
             </a-form-item>
           </a-col>
           <a-col :xs="24" :sm="12">
             <a-form-item label="图标">
-              <a-select v-model:value="menuForm.icon" show-search>
+              <a-select v-model:value="model.icon" show-search>
                 <a-select-option v-for="icon in MENU_ICON_OPTIONS" :key="icon" :value="icon">
                   {{ icon }}
                 </a-select-option>
@@ -739,9 +730,9 @@ onMounted(load)
             </a-form-item>
           </a-col>
         </a-row>
-        <a-form-item v-if="menuForm.type !== 'module'" label="上级菜单" name="parentId">
+        <a-form-item v-if="model.type !== 'module'" label="上级菜单" name="parentId">
           <a-select
-            v-model:value="menuForm.parentId"
+            v-model:value="model.parentId"
             placeholder="选择上级"
             allow-clear
             :disabled="menuMode === 'edit'"
@@ -752,13 +743,13 @@ onMounted(load)
           </a-select>
         </a-form-item>
         <a-form-item
-          v-if="menuForm.type === 'item'"
+          v-if="model.type === 'item'"
           label="路由路径"
           name="path"
           :extra="`只能选择当前工程已注册且不是动态参数的路由（当前 ${routeOptions.length} 个）`"
         >
           <a-select
-            v-model:value="menuForm.path"
+            v-model:value="model.path"
             show-search
             option-filter-prop="label"
             placeholder="选择页面路由"
@@ -774,39 +765,52 @@ onMounted(load)
           </a-select>
         </a-form-item>
         <a-form-item label="说明">
-          <a-textarea v-model:value="menuForm.description" :rows="2" />
+          <a-textarea v-model:value="model.description" :rows="2" />
         </a-form-item>
         <a-row :gutter="16">
           <a-col :xs="24" :sm="12">
             <a-form-item label="排序">
-              <a-input-number v-model:value="menuForm.sortOrder" :min="0" :max="9999" style="width: 100%" />
+              <a-input-number
+                v-model:value="model.sortOrder"
+                :min="0"
+                :max="9999"
+                style="width: 100%"
+              />
             </a-form-item>
           </a-col>
           <a-col :xs="24" :sm="12">
             <a-form-item label="状态">
-              <a-select v-model:value="menuForm.status">
+              <a-select v-model:value="model.status">
                 <a-select-option value="active">启用</a-select-option>
                 <a-select-option value="disabled">停用</a-select-option>
               </a-select>
             </a-form-item>
           </a-col>
         </a-row>
-        <a-form-item label="绑定权限" extra="可输入新的权限编码，保存时会自动创建；拥有任一权限即可看到此菜单">
+        <a-form-item
+          label="绑定权限"
+          extra="可输入新的权限编码，保存时会自动创建；拥有任一权限即可看到此菜单"
+        >
           <a-select
-            v-model:value="menuForm.permissions"
+            v-model:value="model.permissions"
             mode="tags"
             placeholder="输入权限编码或选择已有权限"
-            :options="permissions.map((item) => ({ value: item.code, label: `${item.name} · ${item.code}` }))"
+            :options="
+              permissions.map((item) => ({
+                value: item.code,
+                label: `${item.name} · ${item.code}`,
+              }))
+            "
           />
         </a-form-item>
-        <div v-if="menuForm.permissions.length" class="menu-permission-preview">
-          <a-tag v-for="code in menuForm.permissions" :key="code" color="blue">
+        <div v-if="model.permissions.length" class="menu-permission-preview">
+          <a-tag v-for="code in model.permissions" :key="code" color="blue">
             {{ permissionLabel(code) }}
           </a-tag>
         </div>
-      </a-form>
-    </a-modal>
-  </JccPagePanel>
+      </template>
+    </JccFormModal>
+  </PagePanel>
 </template>
 
 <style scoped>
@@ -817,6 +821,14 @@ onMounted(load)
   flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 12px;
+}
+.access-toolbar__search {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-left: auto;
 }
 .access-table-scroll,
 .access-menu-scroll {

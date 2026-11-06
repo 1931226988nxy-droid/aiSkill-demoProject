@@ -1,3 +1,7 @@
+/**
+ * 文件职责：逾期、到期提醒、预约过期和会话清理定时任务。
+ */
+
 import { writeAudit } from '../lib/audit.js'
 import { transaction } from '../lib/transaction.js'
 import { endOfShanghaiDayAfter, overdueDays, toShanghaiDateString, toShanghaiDateTimeString } from '../lib/time.js'
@@ -22,6 +26,7 @@ export function runAutomatedJobs({
   }
 
   const overdueLoans = db
+    // 逾期任务同时补费用和发通知；通知 dedupeKey 按天生成，重复扫描不会刷屏。
     .prepare(
       `SELECT l.*, b.title AS book_title, rp.user_id AS reader_user_id
        FROM loans l JOIN books b ON b.id = l.book_id
@@ -46,6 +51,7 @@ export function runAutomatedJobs({
   }
 
   const dueSoonDays = settings.get('due_soon_days')
+  // 到期提醒窗口：从当前时刻到“今天 + due_soon_days”的上海日末。
   const threshold = endOfShanghaiDayAfter(now, dueSoonDays)
   const dueSoon = db
     .prepare(
@@ -69,6 +75,7 @@ export function runAutomatedJobs({
   }
 
   const expired = db
+    // 过期预约逐条在事务中释放；releaseReservation 会把副本顺延给下一位或恢复可借。
     .prepare(
       `SELECT r.*, b.title AS book_title, rp.user_id AS reader_user_id
        FROM reservations r JOIN books b ON b.id = r.book_id
@@ -108,6 +115,7 @@ export function runAutomatedJobs({
   }
 
   const waitingBooks = db.prepare(
+    // 兜底修复历史数据：等待预约与可借副本并存时，启动/定时扫描会重新分配。
     `SELECT DISTINCT r.book_id FROM reservations r
      JOIN books b ON b.id = r.book_id
      WHERE r.status = 'waiting' AND b.status = 'active'
@@ -121,6 +129,7 @@ export function runAutomatedJobs({
   }
 
   result.expiredSessions = Number(
+    // 会话过期直接删除，避免会话表无限增长。
     db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(nowIso).changes,
   )
   return result

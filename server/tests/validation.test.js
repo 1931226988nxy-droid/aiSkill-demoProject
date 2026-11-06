@@ -1,3 +1,7 @@
+/**
+ * 文件职责：ISBN、脱敏、密码和逾期规则测试。
+ */
+
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createTestContext } from './helpers.js'

@@ -1,3 +1,7 @@
+/**
+ * 文件职责：读取端口、数据库路径、生产模式和 Cookie Secure 等运行配置。
+ */
+
 import path from 'node:path'
 
 export function loadConfig({ argv = process.argv, env = process.env } = {}) {

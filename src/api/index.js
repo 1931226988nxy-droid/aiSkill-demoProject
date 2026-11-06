@@ -1,5 +1,10 @@
+/**
+ * 文件职责：前端 API 适配层，按业务域封装接口。
+ */
+
 import { request } from './client'
 
+// 所有页面只依赖这一层：统一 URL、HTTP 方法、查询参数和二进制响应，不在组件里散落 fetch。
 export const api = {
   auth: {
     options: () => request('/auth/options'),
@@ -18,9 +23,13 @@ export const api = {
     get: (id) => request(`/books/${id}`),
     create: (body) => request('/books', { method: 'POST', body }),
     update: (id, body) => request(`/books/${id}`, { method: 'PATCH', body }),
-    offShelf: (id, reason) => request(`/books/${id}/off-shelf`, { method: 'POST', body: { reason } }),
+    offShelf: (id, reason) =>
+      request(`/books/${id}/off-shelf`, { method: 'POST', body: { reason } }),
+    onShelf: (id) => request(`/books/${id}/on-shelf`, { method: 'POST', body: {} }),
     categories: () => request('/categories'),
     createCategory: (body) => request('/categories', { method: 'POST', body }),
+    updateCategory: (id, body) => request(`/categories/${id}`, { method: 'PATCH', body }),
+    deleteCategory: (id) => request(`/categories/${id}`, { method: 'DELETE' }),
     authors: () => request('/authors'),
   },
   copies: {
@@ -53,15 +62,16 @@ export const api = {
     list: (query, options = {}) => request('/readers', { query, ...options }),
     get: (id) => request(`/readers/${id}`),
     lookup: (readerNo) => request('/readers/lookup', { query: { readerNo } }),
-    create: (body) => request('/readers', { method: 'POST', body }),
-    update: (id, body) => request(`/readers/${id}`, { method: 'PATCH', body }),
+    create: (body, options = {}) => request('/readers', { method: 'POST', body, ...options }),
+    update: (id, body, options = {}) =>
+      request(`/readers/${id}`, { method: 'PATCH', body, ...options }),
     setStatus: (id, body) => request(`/readers/${id}/status`, { method: 'POST', body }),
   },
   fees: {
     my: (query, options = {}) => request('/my/fees', { query, ...options }),
     list: (query, options = {}) => request('/fees', { query, ...options }),
     handle: (id, body) => request(`/fees/${id}/handle`, { method: 'POST', body }),
-    create: (body) => request('/fees', { method: 'POST', body }),
+    create: (body, options = {}) => request('/fees', { method: 'POST', body, ...options }),
   },
   notifications: {
     list: (query, options = {}) => request('/notifications', { query, ...options }),
@@ -78,20 +88,26 @@ export const api = {
   },
   admin: {
     users: (query, options = {}) => request('/admin/users', { query, ...options }),
-    createUser: (body) => request('/admin/users', { method: 'POST', body }),
-    updateUser: (id, body) => request(`/admin/users/${id}`, { method: 'PATCH', body }),
+    createUser: (body, options = {}) =>
+      request('/admin/users', { method: 'POST', body, ...options }),
+    updateUser: (id, body, options = {}) =>
+      request(`/admin/users/${id}`, { method: 'PATCH', body, ...options }),
     resetPassword: (id, body) =>
       request(`/admin/users/${id}/reset-password`, { method: 'POST', body }),
     permissions: () => request('/admin/permissions'),
-    createPermission: (body) => request('/admin/permissions', { method: 'POST', body }),
-    updatePermission: (id, body) =>
-      request(`/admin/permissions/${id}`, { method: 'PATCH', body }),
+    createPermission: (body, options = {}) =>
+      request('/admin/permissions', { method: 'POST', body, ...options }),
+    updatePermission: (id, body, options = {}) =>
+      request(`/admin/permissions/${id}`, { method: 'PATCH', body, ...options }),
     menus: () => request('/admin/menus'),
-    createMenu: (body) => request('/admin/menus', { method: 'POST', body }),
-    updateMenu: (id, body) => request(`/admin/menus/${id}`, { method: 'PATCH', body }),
+    createMenu: (body, options = {}) =>
+      request('/admin/menus', { method: 'POST', body, ...options }),
+    updateMenu: (id, body, options = {}) =>
+      request(`/admin/menus/${id}`, { method: 'PATCH', body, ...options }),
     deleteMenu: (id) => request(`/admin/menus/${id}`, { method: 'DELETE' }),
     roles: () => request('/admin/roles'),
-    createRole: (body) => request('/admin/roles', { method: 'POST', body }),
+    createRole: (body, options = {}) =>
+      request('/admin/roles', { method: 'POST', body, ...options }),
     updateRole: (id, body) => request(`/admin/roles/${id}`, { method: 'PATCH', body }),
     setRolePermissions: (id, permissions) =>
       request(`/admin/roles/${id}/permissions`, { method: 'PATCH', body: { permissions } }),
@@ -100,9 +116,10 @@ export const api = {
     updateSettings: (body) => request('/admin/settings', { method: 'PATCH', body }),
     auditLogs: (query, options = {}) => request('/admin/audit-logs', { query, ...options }),
     announcements: (query, options = {}) => request('/admin/announcements', { query, ...options }),
-    createAnnouncement: (body) => request('/admin/announcements', { method: 'POST', body }),
-    updateAnnouncement: (id, body) =>
-      request(`/admin/announcements/${id}`, { method: 'PATCH', body }),
+    createAnnouncement: (body, options = {}) =>
+      request('/admin/announcements', { method: 'POST', body, ...options }),
+    updateAnnouncement: (id, body, options = {}) =>
+      request(`/admin/announcements/${id}`, { method: 'PATCH', body, ...options }),
     setAnnouncementStatus: (id, status) =>
       request(`/admin/announcements/${id}/status`, { method: 'POST', body: { status } }),
     runJobs: () => request('/admin/jobs/run', { method: 'POST', body: {} }),

@@ -1,4 +1,9 @@
+/**
+ * 文件职责：按权限过滤菜单树并保持父子层级。
+ */
+
 function loadMenuRows(db) {
+  // 只读取启用菜单和启用权限；停用权限不应因为菜单绑定而继续暴露入口。
   const menus = db
     .prepare(
       `SELECT * FROM menus WHERE status = 'active' ORDER BY sort_order, id`,
@@ -53,6 +58,7 @@ export function createNavigationService({ db }) {
   function forPermissions(permissionCodes) {
     const granted = new Set(permissionCodes)
     const rows = loadMenuRows(db)
+    // 先按 parent_id 分组，后续递归过滤时不需要反复查数据库。
     const byParent = new Map()
     for (const row of rows) {
       if (!byParent.has(row.parentId)) byParent.set(row.parentId, [])
@@ -60,16 +66,19 @@ export function createNavigationService({ db }) {
     }
 
     function filterNode(node) {
+      // 菜单权限是“任一满足”：空权限表示所有已登录用户可见。
       const ownAllowed =
         node.permissions.length === 0 || node.permissions.some((code) => granted.has(code))
       if (!ownAllowed) return null
       if (node.type === 'item') {
+        // 功能节点没有路由就没有可落地页面，直接丢弃。
         return node.path ? node : null
       }
       const children = (byParent.get(node.id) || [])
         .map(filterNode)
         .filter(Boolean)
         .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
+      // 模块/分组在子项全部不可见时也隐藏，避免出现空入口。
       if (!children.length) return null
       return { ...node, children }
     }

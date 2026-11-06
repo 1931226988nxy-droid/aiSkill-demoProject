@@ -1,7 +1,8 @@
 <script setup>
+import PagePanel from '@/components/PagePanel.vue'
+// 文件职责：馆员借书、还书和遗失登记工作台。
 import { reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { JccPagePanel } from '@jcc/shared/components'
 import { api } from '@/api'
 import { getErrorMessage } from '@/api/client'
 import { formatDateTime, formatMoney } from '@/utils'
@@ -48,6 +49,7 @@ function clearLost() {
 }
 
 function openTab(key) {
+  // 切换业务页签时清空上一次的预览和结果，避免把旧条码误确认到新业务。
   activeTab.value = key
   clearBorrow()
   clearReturn()
@@ -55,6 +57,7 @@ function openTab(key) {
 }
 
 async function previewBorrow() {
+  // 预览只用于让馆员确认；真正借出时后端会在事务内重新校验全部规则。
   if (!borrowForm.readerNo || !borrowForm.barcode) {
     borrowError.value = '请填写读者编号和副本条码'
     return
@@ -93,6 +96,7 @@ async function confirmBorrow() {
 }
 
 async function previewReturn() {
+  // 还书预览会显示逾期天数和预计费用，确认后仍在事务中重新计算。
   if (!returnForm.barcode) {
     returnError.value = '请填写副本条码'
     return
@@ -132,6 +136,7 @@ async function confirmReturn() {
 }
 
 async function previewLost() {
+  // 遗失登记复用“在借记录”预览，先确认副本确实处于借出状态。
   if (!lostForm.barcode) {
     lostError.value = '请填写副本条码'
     return
@@ -150,6 +155,7 @@ async function previewLost() {
 }
 
 async function confirmLost() {
+  // 遗失会造成不可逆的借阅结束和副本报损，必须填写处理说明后再提交。
   if (!lostPreview.value || actionLoading.value) return
   if (!lostForm.note || lostForm.note.trim().length < 2) {
     lostError.value = '请填写至少 2 个字符的处理说明'
@@ -177,7 +183,7 @@ async function confirmLost() {
 </script>
 
 <template>
-  <JccPagePanel title="馆员工作台">
+  <PagePanel title="馆员工作台">
     <template #extra><span class="muted small">借还操作会在服务端事务中校验并记录审计日志</span></template>
 
     <PageBody mode="scroll" label="借还业务内容">
@@ -459,5 +465,5 @@ async function confirmLost() {
       </a-tab-pane>
     </a-tabs>
     </PageBody>
-  </JccPagePanel>
+  </PagePanel>
 </template>

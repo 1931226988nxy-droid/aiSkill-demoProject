@@ -1,3 +1,7 @@
+/**
+ * 文件职责：认证、角色权限和资源归属测试。
+ */
+
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { apiRequest, createTestContext, login, startTestServer } from './helpers.js'

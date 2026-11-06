@@ -1,3 +1,7 @@
+/**
+ * 文件职责：时区格式化、金额、条码解析和路由重定向工具。
+ */
+
 import { formatDate } from '@jcc/shared/utils'
 
 export function formatDateTime(value, { dateOnly = false } = {}) {
@@ -15,6 +19,7 @@ export function formatMoney(value) {
 }
 
 export function parseBarcodeText(text) {
+  // 支持换行、逗号、分号和空格混合粘贴；去重并统一大写，适配扫描枪输入。
   return [
     ...new Set(
       String(text || '')
@@ -34,11 +39,13 @@ export function shortDate(value) {
 }
 
 export function safeRedirect(value) {
+  // 只允许站内绝对路径，拒绝 //evil.com 这类协议相对地址，防止开放重定向。
   if (typeof value === 'string' && value.startsWith('/') && !value.startsWith('//')) return value
   return '/'
 }
 
 export function daysOverdue(dueAt) {
+  // 前端仅用于展示逾期天数，费用/续借等服务端口径以服务器计算为准。
   if (!dueAt) return 0
   const diff = Date.now() - new Date(dueAt).getTime()
   return diff > 0 ? Math.floor(diff / 86400000) + 1 : 0

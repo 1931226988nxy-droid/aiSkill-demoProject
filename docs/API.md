@@ -94,7 +94,7 @@
 | 权限码 | 说明 | 默认角色 |
 | --- | --- | --- |
 | `book.read` | 检索、查看图书与馆藏 | 读者/馆员/管理员 |
-| `book.manage` | 图书编目、编辑、下架、分类维护 | 馆员/管理员 |
+| `book.manage` | 图书编目、编辑、上下架、分类维护 | 馆员/管理员 |
 | `copy.manage` | 副本入库、批量导入、盘点、状态变更 | 馆员/管理员 |
 | `reader.manage` | 读者档案、启停、敏感信息详情 | 馆员/管理员 |
 | `reader.loans.view` | 我的借阅菜单/页面 | 读者 |
@@ -225,12 +225,16 @@
 
 `POST /api/books/:id/off-shelf` 需要 `book.manage`，body `{ "reason": "..." }`。存在在借副本或未完成预约时拒绝；仅在架/维修副本会一并下架并写入副本状态日志。
 
+`POST /api/books/:id/on-shelf` 需要 `book.manage`，无需业务字段。图书恢复在架；仅恢复最近一次随该图书下架的副本到原状态，单独下架或之后再次调整过的副本保持不变。上下架均写入审计日志。
+
 ### 分类与作者
 
 | 方法 | 路径 | 权限 | 说明 |
 | --- | --- | --- | --- |
 | GET | `/categories` | `book.read` | 分类列表及图书数 |
 | POST | `/categories` | `book.manage` | 新增分类 |
+| PATCH | `/categories/:id` | `book.manage` | 修改分类代码和名称 |
+| DELETE | `/categories/:id` | `book.manage` | 删除空分类；存在图书或子分类时返回 409 |
 | GET | `/authors` | `book.read` | 作者列表及图书数 |
 
 ### 副本

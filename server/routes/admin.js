@@ -1,3 +1,7 @@
+/**
+ * 文件职责：系统管理接口：用户、角色、设置、公告、审计与任务扫描。
+ */
+
 import { Router } from 'express'
 import { numericId, requestContext } from './helpers.js'
 

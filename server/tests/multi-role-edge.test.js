@@ -1,3 +1,7 @@
+/**
+ * 文件职责：多角色与读者/馆员双身份边界测试。
+ */
+
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createTestContext } from './helpers.js'

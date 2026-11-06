@@ -1,3 +1,7 @@
+/**
+ * 文件职责：读者档案、账号、启停和敏感信息详情。
+ */
+
 import { AppError, ERR } from '../domain/errors.js'
 import { writeAudit } from '../lib/audit.js'
 import { serializeReader } from '../lib/mask.js'
@@ -120,6 +124,7 @@ export function createReaderService({ db, clock = () => new Date() }) {
     const expiresAt = expiresDate ? endOfShanghaiDate(expiresDate) : null
     const now = clock().toISOString()
     try {
+      // 读者账号必须同时写 users、user_roles、reader_profiles，缺一不可。
       return transaction(db, () => {
         const role = db.prepare("SELECT id FROM roles WHERE code = 'reader'").get()
         const userResult = db
@@ -246,6 +251,7 @@ export function createReaderService({ db, clock = () => new Date() }) {
         now,
         id,
       )
+      // 只有纯读者账号才同步停用登录账号；馆员+读者双身份不能因读者证停用而失去馆员登录。
       const staffRoles = db
         .prepare(
           `SELECT COUNT(*) AS count FROM user_roles ur

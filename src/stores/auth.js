@@ -1,8 +1,13 @@
+/**
+ * 文件职责：登录态、当前激活角色、权限和动态导航状态。
+ */
+
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { api } from '@/api'
 
 export const useAuthStore = defineStore('auth', () => {
+  // user.role 是当前激活角色；user.roles 是全部可选角色；permissions 只对应当前角色。
   const user = ref(null)
   const permissions = ref([])
   const navigation = ref([])
@@ -24,6 +29,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function setSession(payload) {
+    // 登录、刷新、切换角色都会整体替换 user + permissions，避免残留上一角色状态。
     user.value = payload.user
     permissions.value = payload.permissions || []
     initialized.value = true
@@ -37,6 +43,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function loadNavigation() {
+    // 导航必须由后端按当前角色计算；切换角色后要重新请求，不能缓存旧菜单。
     if (!user.value) {
       navigation.value = []
       return []
@@ -56,6 +63,7 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     error.value = null
     try {
+      // 恢复会话后立即拉导航；401 视为未登录，不清除其他错误信息。
       const payload = await api.auth.me()
       setSession(payload)
       await loadNavigation()
@@ -101,6 +109,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function switchRole(roleCode) {
+    // 角色切换是服务端会话变更；成功后必须重新加载权限与导航，不能只改本地标签。
     if (roleCode === role.value) return
     loading.value = true
     try {
@@ -117,7 +126,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       await api.auth.logout()
     } catch {
-      // Clearing the local session still lets the user sign in again.
+      // 即使服务端退出失败，也清理本地会话，允许用户重新登录。
     } finally {
       clear()
       initialized.value = true

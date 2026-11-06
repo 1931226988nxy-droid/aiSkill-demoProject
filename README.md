@@ -17,6 +17,8 @@ npm install
 npm run dev
 ```
 
+公共组件库 `@jcc/shared` 已包含在仓库的 `packages/shared` 目录。`npm install` 会安装该本地依赖，Vite 通过共享包公开的 `jccLiveViteConfig()` 读取组件与主题源码。业务接口、权限、路由和产品信息由本项目维护，产品文案集中在 `src/site-config.js`。
+
 访问 <http://localhost:3000>。开发模式首次启动会自动执行迁移并写入演示数据。
 
 ### 演示账号

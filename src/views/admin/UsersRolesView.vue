@@ -1,7 +1,9 @@
 <script setup>
+import PagePanel from '@/components/PagePanel.vue'
+// 文件职责：馆员账号多角色、主角色、角色权限和用户状态管理页。
 import { computed, onMounted, reactive, ref } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { JccPagePanel, JccQueryBar, JccTable } from '@jcc/shared/components'
+import { JccFormModal, JccQueryBar, JccTable } from '@jcc/shared/components'
 import { useTableQuery } from '@jcc/shared/hooks'
 import { api } from '@/api'
 import { getErrorMessage } from '@/api/client'
@@ -18,15 +20,11 @@ const selectedRoleId = ref(null)
 const permissionChecks = reactive({})
 const savingPermissions = ref(false)
 const roleModalOpen = ref(false)
-const roleSaving = ref(false)
-const roleForm = reactive({ code: '', name: '', description: '' })
+const roleInitialValues = { code: '', name: '', description: '' }
 const userModalOpen = ref(false)
 const userMode = ref('create')
-const userSaving = ref(false)
-const userError = ref('')
-const userFormRef = ref()
 const editingUser = ref(null)
-const userForm = reactive({
+const userInitialValues = ref({
   username: '',
   password: '',
   displayName: '',
@@ -45,10 +43,8 @@ const userColumns = [
 ]
 
 const selectedRole = computed(() => roles.value.find((role) => role.id === selectedRoleId.value))
-const primaryRoleOptions = computed(() =>
-  roles.value.filter((role) => userForm.roleCodes.includes(role.code)),
-)
 const permissionGroups = computed(() => {
+  // 停用权限不进入授权矩阵，保存时也不会被重新勾选。
   const groups = {}
   for (const permission of permissions.value.filter((item) => item.status === 'active')) {
     if (!groups[permission.group]) groups[permission.group] = []
@@ -58,49 +54,76 @@ const permissionGroups = computed(() => {
 })
 
 const userRules = computed(() => ({
-  username: userMode.value === 'create'
-    ? [
-        { required: true, message: '请输入用户名', trigger: 'blur' },
-        { pattern: /^[A-Za-z0-9_]{3,32}$/, message: '3-32 位字母、数字或下划线', trigger: 'blur' },
-      ]
-    : [],
-  password: userMode.value === 'create'
-    ? [
-        { required: true, message: '请设置登录密码', trigger: 'blur' },
-        { min: 8, message: '密码至少 8 位', trigger: 'blur' },
-      ]
-    : [],
+  username:
+    userMode.value === 'create'
+      ? [
+          { required: true, message: '请输入用户名', trigger: 'blur' },
+          {
+            pattern: /^[A-Za-z0-9_]{3,32}$/,
+            message: '3-32 位字母、数字或下划线',
+            trigger: 'blur',
+          },
+        ]
+      : [],
+  password:
+    userMode.value === 'create'
+      ? [
+          { required: true, message: '请设置登录密码', trigger: 'blur' },
+          { min: 8, message: '密码至少 8 位', trigger: 'blur' },
+        ]
+      : [],
   displayName: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
   roleCodes: [
     { required: true, type: 'array', min: 1, message: '请至少选择一个角色', trigger: 'change' },
   ],
   primaryRoleCode: [{ required: true, message: '请选择主角色', trigger: 'change' }],
 }))
+const roleRules = {
+  code: [
+    { required: true, message: '请输入角色编码', trigger: 'blur' },
+    {
+      pattern: /^[a-z][a-z0-9_]{2,39}$/,
+      message: '小写字母开头，3-40 位小写字母、数字或下划线',
+      trigger: 'blur',
+    },
+  ],
+  name: [{ required: true, message: '请输入角色名称', trigger: 'blur' }],
+}
 
-const { filters, page, pageSize, items, total, loading, error, refresh, search, reset, changePage } =
-  useTableQuery({
-    initialFilters: { q: '', roleCode: undefined, status: 'all' },
-    pageSize: 10,
-    fetcher: ({ page: pageValue, pageSize: sizeValue, filters: query, signal }) =>
-      api.admin.users(
-        {
-          page: pageValue,
-          pageSize: sizeValue,
-          q: query.q || undefined,
-          roleCode: query.roleCode || undefined,
-          status: query.status === 'all' ? undefined : query.status,
-        },
-        { signal },
-      ),
-  })
+const {
+  filters,
+  page,
+  pageSize,
+  items,
+  total,
+  loading,
+  error,
+  refresh,
+  search,
+  reset,
+  changePage,
+} = useTableQuery({
+  initialFilters: { q: '', roleCode: undefined, status: 'all' },
+  pageSize: 10,
+  fetcher: ({ page: pageValue, pageSize: sizeValue, filters: query, signal }) =>
+    api.admin.users(
+      {
+        page: pageValue,
+        pageSize: sizeValue,
+        q: query.q || undefined,
+        roleCode: query.roleCode || undefined,
+        status: query.status === 'all' ? undefined : query.status,
+      },
+      { signal },
+    ),
+})
 
 async function loadMeta() {
-  const [roleData, permissionData] = await Promise.all([
-    api.admin.roles(),
-    api.admin.permissions(),
-  ])
+  // 角色与权限清单一起加载；角色页的权限矩阵依赖两者对齐。
+  const [roleData, permissionData] = await Promise.all([api.admin.roles(), api.admin.permissions()])
   roles.value = roleData.items
   permissions.value = permissionData.items
+  // 刷新时保留当前选中角色，避免保存权限后跳回默认角色。
   if (selectedRoleId.value) {
     const keep = roles.value.find((role) => role.id === selectedRoleId.value)
     if (keep) selectRole(keep)
@@ -119,80 +142,69 @@ function selectRole(role) {
 function openCreateUser() {
   userMode.value = 'create'
   editingUser.value = null
-  userError.value = ''
   const defaultRole = roles.value.find((role) => role.code === 'librarian') || roles.value[0]
-  Object.assign(userForm, {
+  userInitialValues.value = {
     username: '',
     password: '',
     displayName: '',
     roleCodes: defaultRole ? [defaultRole.code] : [],
     primaryRoleCode: defaultRole?.code || '',
     status: 'active',
-  })
+  }
   userModalOpen.value = true
 }
 
 function openEditUser(record) {
   userMode.value = 'edit'
   editingUser.value = record
-  userError.value = ''
-  Object.assign(userForm, {
+  userInitialValues.value = {
     username: record.username,
     password: '',
     displayName: record.displayName,
     roleCodes: (record.roles || []).map((role) => role.code),
     primaryRoleCode: record.primaryRoleCode || record.role.code,
     status: record.status,
-  })
+  }
   userModalOpen.value = true
 }
 
-function handleRolesChange(codes) {
-  if (!codes.includes(userForm.primaryRoleCode)) {
-    userForm.primaryRoleCode = codes[0] || ''
+function handleRolesChange(codes, model) {
+  // 取消勾选当前主角色时，自动把主角色切到剩余的第一个角色。
+  if (!codes.includes(model.primaryRoleCode)) {
+    model.primaryRoleCode = codes[0] || ''
   }
 }
 
-async function submitUser() {
-  if (userSaving.value) return
-  userError.value = ''
-  try {
-    await userFormRef.value.validate()
-  } catch {
-    return
+function submitUser(values, { signal }) {
+  if (userMode.value === 'create') {
+    return api.admin.createUser(
+      {
+        username: values.username,
+        password: values.password,
+        displayName: values.displayName,
+        roleCodes: values.roleCodes,
+        primaryRoleCode: values.primaryRoleCode,
+      },
+      { signal },
+    )
   }
-  if (!userForm.roleCodes.length) {
-    userError.value = '每个账号至少需要一个角色'
-    return
-  }
-  userSaving.value = true
-  try {
-    if (userMode.value === 'create') {
-      await api.admin.createUser({
-        username: userForm.username,
-        password: userForm.password,
-        displayName: userForm.displayName,
-        roleCodes: userForm.roleCodes,
-        primaryRoleCode: userForm.primaryRoleCode,
-      })
-      message.success('账号已创建')
-    } else {
-      await api.admin.updateUser(editingUser.value.id, {
-        displayName: userForm.displayName,
-        roleCodes: userForm.roleCodes,
-        primaryRoleCode: userForm.primaryRoleCode,
-        status: userForm.status,
-      })
-      message.success('账号已更新')
-    }
-    userModalOpen.value = false
-    await refresh()
-    if (auth.user?.id === editingUser.value?.id) await auth.refresh()
-  } catch (error) {
-    userError.value = getErrorMessage(error)
-  } finally {
-    userSaving.value = false
-  }
+  return api.admin.updateUser(
+    editingUser.value.id,
+    {
+      displayName: values.displayName,
+      roleCodes: values.roleCodes,
+      primaryRoleCode: values.primaryRoleCode,
+      status: values.status,
+    },
+    { signal },
+  )
+}
+
+async function afterUserSaved() {
+  message.success(userMode.value === 'create' ? '账号已创建' : '账号已更新')
+  await refresh()
+  // 管理员修改自己的姓名等资料后，顶栏/权限态需要同步刷新。
+  if (auth.user?.id === editingUser.value?.id) await auth.refresh()
 }
 
 function resetPassword(record) {
@@ -216,6 +228,7 @@ function resetPassword(record) {
 }
 
 async function savePermissions() {
+  // 管理员角色权限由代码固定为“全部启用权限”，前端也禁止提交。
   if (!selectedRole.value || selectedRole.value.code === 'admin') return
   savingPermissions.value = true
   try {
@@ -224,6 +237,7 @@ async function savePermissions() {
       .map((permission) => permission.code)
     await api.admin.setRolePermissions(selectedRole.value.id, codes)
     message.success('角色权限已保存')
+    // 重新拉取角色，防止后端基于当前操作者权限裁剪后前端仍显示旧勾选。
     const keepId = selectedRole.value.id
     await loadMeta()
     selectedRoleId.value = keepId
@@ -235,26 +249,14 @@ async function savePermissions() {
   }
 }
 
-async function createRole() {
-  if (!roleForm.code.trim() || !roleForm.name.trim()) {
-    message.warning('请填写角色编码和名称')
-    return
-  }
-  roleSaving.value = true
-  try {
-    const role = await api.admin.createRole({ ...roleForm })
-    message.success('角色已创建')
-    roleModalOpen.value = false
-    roleForm.code = ''
-    roleForm.name = ''
-    roleForm.description = ''
-    await loadMeta()
-    selectRole(roles.value.find((item) => item.id === role.id) || roles.value[0])
-  } catch (error) {
-    message.error(getErrorMessage(error))
-  } finally {
-    roleSaving.value = false
-  }
+function createRole(values, { signal }) {
+  return api.admin.createRole(values, { signal })
+}
+
+async function afterRoleSaved(role) {
+  message.success('角色已创建')
+  await loadMeta()
+  selectRole(roles.value.find((item) => item.id === role.id) || roles.value[0])
 }
 
 function deleteRole() {
@@ -288,19 +290,25 @@ onMounted(async () => {
 </script>
 
 <template>
-  <JccPagePanel title="账号与角色">
-    <template #extra>
-      <a-button v-if="activeTab === 'users'" type="primary" @click="openCreateUser">
-        新增馆员账号
-      </a-button>
-      <a-button v-else type="primary" @click="roleModalOpen = true">新增角色</a-button>
-    </template>
-
+  <PagePanel title="账号与角色">
     <a-tabs v-model:activeKey="activeTab">
       <a-tab-pane key="users" tab="馆员账号">
         <JccQueryBar :loading="loading" @search="search" @reset="reset">
-          <a-input v-model:value="filters.q" class="filter-field" placeholder="用户名 / 姓名" allow-clear />
-          <a-select v-model:value="filters.roleCode" class="filter-field" placeholder="全部角色" allow-clear>
+          <template #actions>
+            <a-button type="primary" @click="openCreateUser">新增馆员账号</a-button>
+          </template>
+          <a-input
+            v-model:value="filters.q"
+            class="filter-field"
+            placeholder="用户名 / 姓名"
+            allow-clear
+          />
+          <a-select
+            v-model:value="filters.roleCode"
+            class="filter-field"
+            placeholder="全部角色"
+            allow-clear
+          >
             <a-select-option v-for="role in roles" :key="role.code" :value="role.code">
               {{ role.name }}
             </a-select-option>
@@ -369,6 +377,9 @@ onMounted(async () => {
       </a-tab-pane>
 
       <a-tab-pane key="roles" tab="角色权限">
+        <div class="panel-extra">
+          <a-button type="primary" @click="roleModalOpen = true">新增角色</a-button>
+        </div>
         <div class="role-layout">
           <aside class="role-list">
             <button
@@ -427,7 +438,11 @@ onMounted(async () => {
               />
 
               <div class="permission-groups">
-                <div v-for="(groupPermissions, group) in permissionGroups" :key="group" class="permission-group">
+                <div
+                  v-for="(groupPermissions, group) in permissionGroups"
+                  :key="group"
+                  class="permission-group"
+                >
                   <h4>{{ group }}</h4>
                   <div class="permission-checks">
                     <a-checkbox
@@ -449,46 +464,49 @@ onMounted(async () => {
       </a-tab-pane>
     </a-tabs>
 
-    <a-modal
+    <JccFormModal
       v-model:open="userModalOpen"
       :title="userMode === 'create' ? '新增馆员账号' : '编辑账号'"
-      :confirm-loading="userSaving"
-      ok-text="保存"
-      cancel-text="取消"
-      @ok="submitUser"
+      :initial-values="userInitialValues"
+      :rules="userRules"
+      :submit="submitUser"
+      @saved="afterUserSaved"
     >
-      <a-alert v-if="userError" type="error" show-icon :message="userError" style="margin-bottom: 14px" />
-      <a-form ref="userFormRef" :model="userForm" :rules="userRules" layout="vertical">
+      <template #default="{ model }">
         <a-form-item label="用户名" name="username">
-          <a-input v-model:value="userForm.username" :disabled="userMode === 'edit'" />
+          <a-input v-model:value="model.username" :disabled="userMode === 'edit'" />
         </a-form-item>
         <a-form-item v-if="userMode === 'create'" label="初始密码" name="password">
-          <a-input-password v-model:value="userForm.password" autocomplete="new-password" />
+          <a-input-password v-model:value="model.password" autocomplete="new-password" />
         </a-form-item>
         <a-form-item label="姓名" name="displayName">
-          <a-input v-model:value="userForm.displayName" />
+          <a-input v-model:value="model.displayName" />
         </a-form-item>
         <a-form-item label="角色（可多选）" name="roleCodes">
           <a-select
-            v-model:value="userForm.roleCodes"
+            v-model:value="model.roleCodes"
             mode="multiple"
             placeholder="选择角色，至少一个"
             :disabled="editingUser?.id === auth.user?.id"
-            @change="handleRolesChange"
+            @change="(codes) => handleRolesChange(codes, model)"
           >
             <a-select-option v-for="role in roles" :key="role.code" :value="role.code">
               {{ role.name }}
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="主角色" name="primaryRoleCode" extra="登录后默认使用主角色，可在右上角切换其他角色">
+        <a-form-item
+          label="主角色"
+          name="primaryRoleCode"
+          extra="登录后默认使用主角色，可在右上角切换其他角色"
+        >
           <a-select
-            v-model:value="userForm.primaryRoleCode"
+            v-model:value="model.primaryRoleCode"
             placeholder="选择主角色"
             :disabled="editingUser?.id === auth.user?.id"
           >
             <a-select-option
-              v-for="role in primaryRoleOptions"
+              v-for="role in roles.filter((item) => model.roleCodes.includes(item.code))"
               :key="role.code"
               :value="role.code"
             >
@@ -497,35 +515,35 @@ onMounted(async () => {
           </a-select>
         </a-form-item>
         <a-form-item v-if="userMode === 'edit'" label="账号状态">
-          <a-select v-model:value="userForm.status" :disabled="editingUser?.id === auth.user?.id">
+          <a-select v-model:value="model.status" :disabled="editingUser?.id === auth.user?.id">
             <a-select-option value="active">启用</a-select-option>
             <a-select-option value="disabled">停用</a-select-option>
           </a-select>
         </a-form-item>
-      </a-form>
-    </a-modal>
+      </template>
+    </JccFormModal>
 
-    <a-modal
+    <JccFormModal
       v-model:open="roleModalOpen"
       title="新增角色"
-      :confirm-loading="roleSaving"
-      ok-text="创建"
-      cancel-text="取消"
-      @ok="createRole"
+      :initial-values="roleInitialValues"
+      :rules="roleRules"
+      :submit="createRole"
+      @saved="afterRoleSaved"
     >
-      <a-form layout="vertical">
-        <a-form-item label="角色编码" required extra="小写字母开头，仅含小写字母、数字、下划线">
-          <a-input v-model:value="roleForm.code" placeholder="如 assistant" />
+      <template #default="{ model }">
+        <a-form-item label="角色编码" name="code" extra="小写字母开头，仅含小写字母、数字、下划线">
+          <a-input v-model:value="model.code" placeholder="如 assistant" />
         </a-form-item>
-        <a-form-item label="角色名称" required>
-          <a-input v-model:value="roleForm.name" placeholder="如 助理馆员" />
+        <a-form-item label="角色名称" name="name">
+          <a-input v-model:value="model.name" placeholder="如 助理馆员" />
         </a-form-item>
         <a-form-item label="说明">
-          <a-textarea v-model:value="roleForm.description" :rows="3" />
+          <a-textarea v-model:value="model.description" :rows="3" />
         </a-form-item>
-      </a-form>
-    </a-modal>
-  </JccPagePanel>
+      </template>
+    </JccFormModal>
+  </PagePanel>
 </template>
 
 <style scoped>

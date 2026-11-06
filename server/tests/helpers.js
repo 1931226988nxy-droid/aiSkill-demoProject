@@ -1,3 +1,7 @@
+/**
+ * 文件职责：测试上下文、临时服务器与登录辅助。
+ */
+
 import { createApp } from '../app.js'
 import { openDatabase } from '../db/index.js'
 import { runMigrations } from '../db/migrate.js'

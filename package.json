@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@ant-design/icons-vue": "^7.0.1",
-    "@jcc/shared": "file:../jcc/frontend-workspace/packages/shared",
+    "@jcc/shared": "file:packages/shared",
     "ant-design-vue": "^4.2.6",
     "dayjs": "^1.11.23",
     "express": "^5.3.0",

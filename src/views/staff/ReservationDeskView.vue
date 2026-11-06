@@ -1,7 +1,9 @@
 <script setup>
+import PagePanel from '@/components/PagePanel.vue'
+// 文件职责：馆员预约队列处理页。
 import { onMounted, ref } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { JccPagePanel, JccQueryBar, JccTable } from '@jcc/shared/components'
+import { JccQueryBar, JccTable } from '@jcc/shared/components'
 import { useTableQuery } from '@jcc/shared/hooks'
 import { api } from '@/api'
 import { getErrorMessage } from '@/api/client'
@@ -21,21 +23,32 @@ const columns = [
   { title: '操作', key: 'action', width: 90, fixed: 'right' },
 ]
 
-const { filters, page, pageSize, items, total, loading, error, refresh, search, reset, changePage } =
-  useTableQuery({
-    initialFilters: { q: '', status: 'ready' },
-    pageSize: 10,
-    fetcher: ({ page: pageValue, pageSize: sizeValue, filters: query, signal }) =>
-      api.reservations.list(
-        {
-          page: pageValue,
-          pageSize: sizeValue,
-          q: query.q || undefined,
-          status: query.status === 'all' ? undefined : query.status,
-        },
-        { signal },
-      ),
-  })
+const {
+  filters,
+  page,
+  pageSize,
+  items,
+  total,
+  loading,
+  error,
+  refresh,
+  search,
+  reset,
+  changePage,
+} = useTableQuery({
+  initialFilters: { q: '', status: 'ready' },
+  pageSize: 10,
+  fetcher: ({ page: pageValue, pageSize: sizeValue, filters: query, signal }) =>
+    api.reservations.list(
+      {
+        page: pageValue,
+        pageSize: sizeValue,
+        q: query.q || undefined,
+        status: query.status === 'all' ? undefined : query.status,
+      },
+      { signal },
+    ),
+})
 
 function cancel(record) {
   Modal.confirm({
@@ -62,8 +75,7 @@ onMounted(refresh)
 </script>
 
 <template>
-  <JccPagePanel title="预约处理">
-    <template #extra><span class="muted small">共 {{ total }} 条预约</span></template>
+  <PagePanel title="预约处理">
     <a-alert
       type="info"
       show-icon
@@ -72,7 +84,15 @@ onMounted(refresh)
     />
 
     <JccQueryBar :loading="loading" @search="search" @reset="reset">
-      <a-input v-model:value="filters.q" class="filter-field--wide" placeholder="图书 / 读者 / ISBN" allow-clear />
+      <template #actions>
+        <span class="muted small">共 {{ total }} 条预约</span>
+      </template>
+      <a-input
+        v-model:value="filters.q"
+        class="filter-field--wide"
+        placeholder="图书 / 读者 / ISBN"
+        allow-clear
+      />
       <a-select v-model:value="filters.status" class="filter-field" aria-label="预约状态">
         <a-select-option value="ready">待取书</a-select-option>
         <a-select-option value="waiting">排队中</a-select-option>
@@ -143,5 +163,5 @@ onMounted(refresh)
         </template>
       </template>
     </JccTable>
-  </JccPagePanel>
+  </PagePanel>
 </template>

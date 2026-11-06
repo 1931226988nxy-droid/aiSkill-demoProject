@@ -1,3 +1,7 @@
+/**
+ * 文件职责：初始化内置权限、角色、默认菜单和演示数据。
+ */
+
 import { DEFAULT_SETTINGS, PERMISSIONS, ROLE_DEFINITIONS } from '../domain/constants.js'
 import { DEFAULT_MENU_TREE } from '../domain/default-menus.js'
 import { hashPassword } from '../lib/passwords.js'
@@ -6,6 +10,7 @@ import { transaction } from '../lib/transaction.js'
 import { password, username } from '../lib/validation.js'
 
 function insertSettings(db, now) {
+  // 系统参数只补缺失项，不覆盖管理员在“系统设置”中已经保存的值。
   const insert = db.prepare(
     `INSERT OR IGNORE INTO settings (key, value, type, label, description, updated_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
@@ -16,6 +21,7 @@ function insertSettings(db, now) {
 }
 
 function syncPermissions(db, nowIso) {
+  // 每次启动同步内置权限：升级新增的权限码会自动出现，已有自定义权限不受影响。
   const insert = db.prepare(
     `INSERT OR IGNORE INTO permissions
       (code, name, group_name, description, status, is_system, created_at, updated_at)
@@ -31,6 +37,11 @@ function syncPermissions(db, nowIso) {
       nowIso,
     )
   }
+  // 仅更新旧版内置文案，保留管理员自行修改过的权限名称。
+  db.prepare(
+    `UPDATE permissions SET name = '图书编目与上下架', updated_at = ?
+     WHERE code = 'book.manage' AND name = '图书编目与下架'`,
+  ).run(nowIso)
   return new Map(
     db
       .prepare('SELECT id, code FROM permissions')
@@ -40,6 +51,7 @@ function syncPermissions(db, nowIso) {
 }
 
 function ensureBuiltInReaderPermissions(db, nowIso) {
+  // 老库升级时补齐读者自助权限；INSERT OR IGNORE 保证不会重复关联。
   const readerRole = db.prepare("SELECT id FROM roles WHERE code = 'reader'").get()
   if (!readerRole) return
   const insert = db.prepare(
@@ -93,10 +105,12 @@ function insertMenuNode(db, node, parentId, nowIso, permissionIds, parentType = 
 }
 
 function seedDefaultMenus(db, nowIso) {
+  // 用 settings 里的标记保证默认菜单只播种一次，之后管理员的增删改不会被启动覆盖。
   const marker = db.prepare("SELECT value FROM settings WHERE key = 'menu_seed_version'").get()
   if (marker) return
   const count = Number(db.prepare('SELECT COUNT(*) AS count FROM menus').get().count)
   if (count > 0) {
+    // 已有菜单（例如手工导入）时不重复插入，只写标记。
     db.prepare(
       `INSERT OR REPLACE INTO settings (key, value, type, label, description, updated_at)
        VALUES ('menu_seed_version', '1', 'string', '菜单种子版本', '系统内部标记', ?)`,
@@ -128,11 +142,13 @@ export function seedDatabase(db, {
   const permissionIds = syncPermissions(db, nowIso)
   const existing = db.prepare('SELECT COUNT(*) AS count FROM users').get()
   if (Number(existing.count) > 0) {
+    // 老库不重灌演示数据，只补齐新增权限和默认菜单。
     ensureBuiltInReaderPermissions(db, nowIso)
     seedDefaultMenus(db, nowIso)
     return { seeded: false }
   }
   if (!demo && !initialAdmin?.password) {
+    // 生产环境空库必须显式提供初始管理员密码，避免自动生成弱口令。
     throw new Error('生产环境首次启动空数据库时，请设置 INITIAL_ADMIN_PASSWORD')
   }
   const bootstrapAdmin = demo ? null : {
@@ -183,6 +199,7 @@ export function seedDatabase(db, {
       'INSERT INTO user_roles (user_id, role_id, created_at) VALUES (?, ?, ?)',
     )
     if (bootstrapAdmin) {
+      // 生产空库只创建一个管理员，不创建演示馆员/读者；自助注册默认关闭。
       const adminId = Number(userInsert.run(
         bootstrapAdmin.username,
         hashPassword(bootstrapAdmin.password),

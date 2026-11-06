@@ -1,8 +1,13 @@
+/**
+ * 文件职责：从会话令牌解析当前用户，并提供认证与权限中间件。
+ */
+
 import { AppError, ERR } from '../domain/errors.js'
 import { parseCookies } from '../lib/cookies.js'
 
 export function createAuthMiddleware({ auth }) {
   function attach(req, res, next) {
+    // attach 只解析身份，不强制登录；公开接口也需要它来识别可选会话。
     const token = parseCookies(req.headers.cookie || '').lib_session || null
     const session = auth.resolveSession(token)
     req.sessionToken = token
@@ -18,6 +23,7 @@ export function createAuthMiddleware({ auth }) {
   }
 
   function requirePermission(code) {
+    // 权限校验使用“当前激活角色”的 permissions；角色切换后自动生效。
     return (req, res, next) => {
       if (!req.auth) throw new AppError(ERR.AUTH_REQUIRED, '请先登录', 401)
       if (!req.permissions.includes(code)) {

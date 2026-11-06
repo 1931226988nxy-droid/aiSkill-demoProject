@@ -1,6 +1,7 @@
 <script setup>
+import PagePanel from '@/components/PagePanel.vue'
+// 文件职责：读者/馆员公告列表与详情弹窗。
 import { onMounted, ref } from 'vue'
-import { JccPagePanel } from '@jcc/shared/components'
 import { api } from '@/api'
 import { getErrorMessage } from '@/api/client'
 import { formatDateTime } from '@/utils'
@@ -34,7 +35,7 @@ onMounted(load)
 </script>
 
 <template>
-  <JccPagePanel title="馆内公告">
+  <PagePanel title="馆内公告">
     <template #extra><span class="muted small">只展示管理员已发布的内容</span></template>
 
     <PageBody mode="scroll" label="公告内容">
@@ -77,7 +78,7 @@ onMounted(load)
       </div>
       <div class="book-summary">{{ selected?.content }}</div>
     </a-modal>
-  </JccPagePanel>
+  </PagePanel>
 </template>
 
 <style scoped>

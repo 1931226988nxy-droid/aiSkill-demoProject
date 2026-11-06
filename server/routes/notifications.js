@@ -1,3 +1,7 @@
+/**
+ * 文件职责：站内通知与已发布公告接口。
+ */
+
 import { Router } from 'express'
 import { AppError, ERR } from '../domain/errors.js'
 import { paged, parsePaging } from '../lib/pagination.js'

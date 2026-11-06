@@ -1,3 +1,7 @@
+/**
+ * 文件职责：动态导航定位与返回目标测试。
+ */
+
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { backDestination, findModuleForPath } from '../../src/navigation.js'
@@ -9,11 +13,11 @@ const navigation = [{
   }],
 }]
 
-test('模块和功能页面都有稳定的返回目标', () => {
+test('模块菜单没有返回入口，功能页面有稳定的返回目标', () => {
   assert.equal(findModuleForPath(navigation, '/catalog')?.code, 'catalog')
   assert.deepEqual(backDestination(navigation, {
     name: 'module', path: '/modules/catalog', meta: {},
-  }), { path: '/', label: '工作台' })
+  }), null)
   assert.deepEqual(backDestination(navigation, {
     name: 'catalog', path: '/catalog', meta: { menu: '/catalog' },
   }), { path: '/modules/catalog', label: '馆藏综合' })

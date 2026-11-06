@@ -1,3 +1,7 @@
+/**
+ * 文件职责：借还、续借、预约和时区核心测试。
+ */
+
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createTestContext } from './helpers.js'

@@ -1,3 +1,7 @@
+/**
+ * 文件职责：路由层通用 ID 校验与操作者上下文。
+ */
+
 import { AppError, ERR } from '../domain/errors.js'
 
 export function numericId(value, label = '编号') {

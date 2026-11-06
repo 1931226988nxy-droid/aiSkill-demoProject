@@ -1,3 +1,7 @@
+/**
+ * 文件职责：读者管理接口。
+ */
+
 import { Router } from 'express'
 import { AppError, ERR } from '../domain/errors.js'
 import { numericId, requestContext } from './helpers.js'

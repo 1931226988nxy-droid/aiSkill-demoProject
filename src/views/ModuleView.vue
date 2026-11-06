@@ -1,23 +1,34 @@
 <script setup>
+import PagePanel from '@/components/PagePanel.vue'
+// 文件职责：动态模块工作区：模块卡片、标签分组和功能入口。
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { JccPagePanel } from '@jcc/shared/components'
 import { RightOutlined } from '@ant-design/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { resolveMenuIcon } from '@/menu-icons'
+import { filterAccessibleNavigation } from '@/navigation'
 import PageBody from '@/components/PageBody.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 
+// 模块页不直接请求菜单接口，而是复用当前会话已加载的动态导航，保证与侧栏一致。
+const visibleNavigation = computed(() =>
+  filterAccessibleNavigation(auth.navigation, {
+    resolveRoute: router.resolve,
+    can: auth.can,
+    isReader: auth.isReader,
+  }),
+)
 const module = computed(() =>
-  (auth.navigation || []).find(
+  visibleNavigation.value.find(
     (item) => item.type === 'module' && item.code === route.params.code,
   ),
 )
 
 const groups = computed(() => {
+  // 后端可能返回“分组 + 直接挂在模块下的功能”，这里统一归一化为可渲染的分组列表。
   if (!module.value) return []
   const children = module.value.children || []
   const groupChildren = children.filter((item) => item.type === 'group')
@@ -39,12 +50,13 @@ const groups = computed(() => {
 })
 
 function openItem(item) {
+  // 功能卡片只负责跳转；真实页面权限仍由路由 meta 和后端接口校验。
   if (item.path) router.push(item.path)
 }
 </script>
 
 <template>
-  <JccPagePanel :title="module?.title || '功能模块'">
+  <PagePanel :title="module?.title || '功能模块'">
     <template #extra>
       <span v-if="module" class="muted small">
         {{ groups.length }} 个分组 ·
@@ -98,13 +110,9 @@ function openItem(item) {
         status="403"
         title="当前角色无权访问该模块"
         sub-title="可以尝试在右上角切换角色，或联系管理员调整角色权限与菜单授权。"
-      >
-        <template #extra>
-          <a-button type="primary" @click="router.push('/')">返回工作台</a-button>
-        </template>
-      </a-result>
+      />
     </PageBody>
-  </JccPagePanel>
+  </PagePanel>
 </template>
 
 <style scoped>

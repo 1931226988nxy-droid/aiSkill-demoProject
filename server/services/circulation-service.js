@@ -1,3 +1,7 @@
+/**
+ * 文件职责：借书、还书、续借、遗失和借阅查询核心事务。
+ */
+
 import { AppError, ERR } from '../domain/errors.js'
 import { writeAudit } from '../lib/audit.js'
 import { serializeReader } from '../lib/mask.js'
@@ -103,6 +107,8 @@ export function createCirculationService({
   }
 
   function evaluateBorrow({ readerNo, barcode }, now) {
+    // 借书前统一做“读者资格 → 借阅限额 → 副本状态 → 预约优先权”四层校验。
+    // previewBorrow 与 borrow 共用此函数，保证预览和实际借出规则一致。
     const reader = getReaderByNo(readerNo)
     if (!reader) throw new AppError(ERR.NOT_FOUND, '读者不存在，请核对读者编号', 404)
     if (reader.status !== 'active' || reader.userStatus !== 'active') {
@@ -116,6 +122,7 @@ export function createCirculationService({
         overdueLoans: reader.overdueLoans,
       })
     }
+    // 未缴费用和逾期一样属于借阅阻断条件，必须线下结清或豁免后才能继续借书。
     if (reader.pendingFees > 0) {
       throw new AppError(ERR.PENDING_FEES_BLOCK, '读者有未缴费用，请先处理后再借书', 409, {
         pendingFees: reader.pendingFees,
@@ -148,6 +155,7 @@ export function createCirculationService({
     }
     let reservation = null
     if (copyRow.status === 'reserved') {
+      // 预约保留副本只能由对应读者在取书期限内借出。
       reservation = db
         .prepare(
           `SELECT * FROM reservations WHERE copy_id = ? AND book_id = ?
@@ -158,6 +166,7 @@ export function createCirculationService({
         throw new AppError(ERR.COPY_RESERVED, '该副本已为其他预约读者保留', 409)
       }
     } else if (copyRow.status === 'available') {
+      // 只要存在 waiting/ready 预约，可借副本也不能绕过队列直接借给普通读者。
       const queue = db
         .prepare(
           `SELECT id, reader_id FROM reservations
@@ -210,9 +219,11 @@ export function createCirculationService({
   function borrow(input, actor, ip = '') {
     const now = clock()
     try {
+      // 事务内重跑 evaluateBorrow：预览后副本/预约可能变化，不能只依赖前端预览结果。
       return transaction(db, () => {
         const result = evaluateBorrow(input, now)
         const nowIso = now.toISOString()
+        // 条件更新是并发兜底：只有仍处于预览时的副本状态才能被借出。
         const updated = db
           .prepare("UPDATE copies SET status = 'borrowed', updated_at = ? WHERE id = ? AND status = ?")
           .run(nowIso, result.copy.id, result.copy.status)
@@ -237,6 +248,7 @@ export function createCirculationService({
             nowIso,
           )
         const loanId = Number(loanResult.lastInsertRowid)
+        // 完成预约借出后关闭对应 ready 预约，避免队列残留。
         if (result.reservation) {
           db.prepare(
             `UPDATE reservations SET status = 'fulfilled', copy_id = ?, closed_at = ?
@@ -277,6 +289,7 @@ export function createCirculationService({
         return mapLoan(db.prepare(`${LOAN_SELECT} WHERE l.id = ?`).get(loanId), now)
       })
     } catch (error) {
+      // 唯一索引冲突通常意味着并发请求已抢先借出同一副本或已有同书在借。
       if (isUniqueConstraint(error)) {
         throw new AppError(ERR.COPY_NOT_AVAILABLE, '该副本已被借出或有重复借阅记录', 409)
       }
@@ -305,6 +318,7 @@ export function createCirculationService({
   }
 
   function syncOverdueFee(loan, now) {
+    // 逾期费用按“当前应收总额 - 已结算/已豁免金额”计算，已结清后继续逾期只会产生差额补充费用。
     const days = overdueDays(loan.due_at, now)
     const rate = settings.get('fine_per_day_cents')
     if (days <= 0 || rate <= 0) return null
@@ -318,6 +332,7 @@ export function createCirculationService({
       .reduce((total, fee) => total + Number(fee.amount_cents), 0)
     const remainingAmount = Math.max(0, amount - settledAmount)
     const pending = fees.find((fee) => fee.status === 'pending')
+    // 同一借阅最多保留一条 pending 逾期费；金额变化时原位更新，不重复插入。
     if (pending) {
       if (Number(pending.amount_cents) !== remainingAmount) {
         db.prepare('UPDATE fees SET amount_cents = ?, updated_at = ? WHERE id = ?').run(
@@ -348,6 +363,7 @@ export function createCirculationService({
   function returnCopy({ barcode, condition = '' }, actor, ip = '') {
     const now = clock()
     const nowIso = now.toISOString()
+    // 还书在单个事务内完成：结清逾期费、关闭借阅、顺延预约或释放副本。
     return transaction(db, () => {
       const row = findActiveLoanByBarcode(barcode)
       if (!row) throw new AppError(ERR.LOAN_NOT_FOUND, '未找到该条码对应的在借记录', 404)
@@ -359,6 +375,7 @@ export function createCirculationService({
         )
         .run(nowIso, actor.id, optionalString(condition, 'condition', '归还状态', { max: 300 }), nowIso, row.id)
       if (!updated.changes) throw new AppError(ERR.CONFLICT, '该借阅已归还，请刷新后重试', 409)
+      // 有等待队列时副本直接转为 reserved 并生成 ready 预约；否则才恢复 available。
       const nextReservation = promoteNextReservation({
         db,
         bookId: row.book_id,
@@ -439,6 +456,7 @@ export function createCirculationService({
       throw new AppError(ERR.FORBIDDEN, '不能操作他人的借阅记录', 403)
     }
     if (row.returned_at) throw new AppError(ERR.CONFLICT, '该借阅已归还，不能续借', 409)
+    // 续借规则：未逾期、未达次数上限、当前没有人等待这本书。
     const days = overdueDays(row.due_at, now)
     if (days > 0) {
       throw new AppError(ERR.RENEW_OVERDUE, '逾期借阅不能续借，请先归还并处理费用', 409)
@@ -456,6 +474,7 @@ export function createCirculationService({
     }
     const nextDueAt = endOfShanghaiDayAfter(new Date(row.due_at), settings.get('renewal_days'))
     return transaction(db, () => {
+      // 条件更新 returned_at IS NULL，防止“续借”和“还书”并发时把已还记录改坏。
       const updated = db
         .prepare(
           'UPDATE loans SET due_at = ?, renewals = renewals + 1, updated_at = ? WHERE id = ? AND returned_at IS NULL',
@@ -484,6 +503,7 @@ export function createCirculationService({
   }
 
   function markLost(loanId, { amount, note }, actor, ip = '') {
+    // 遗失登记会同时结束借阅、把副本标为 lost，并按填写金额生成一笔待处理赔偿费用。
     const now = clock()
     const nowIso = now.toISOString()
     const row = db.prepare(`${LOAN_SELECT} WHERE l.id = ?`).get(loanId)

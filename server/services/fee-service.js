@@ -1,3 +1,7 @@
+/**
+ * 文件职责：费用查询、登记、线下处理与豁免。
+ */
+
 import { AppError, ERR } from '../domain/errors.js'
 import { writeAudit } from '../lib/audit.js'
 import { paged, parsePaging } from '../lib/pagination.js'
@@ -91,6 +95,7 @@ export function createFeeService({ db, clock = () => new Date(), notifications }
   function handle(id, { action, note }, actor, ip = '') {
     const row = db.prepare(`${FEE_SELECT} WHERE f.id = ?`).get(id)
     if (!row) throw new AppError(ERR.NOT_FOUND, '费用记录不存在', 404)
+    // 费用只允许从 pending 流转一次，settled/waived 都是终态。
     if (row.status !== 'pending') {
       throw new AppError(ERR.FEE_ALREADY_HANDLED, '该费用已处理，不能重复操作', 409)
     }
@@ -101,6 +106,7 @@ export function createFeeService({ db, clock = () => new Date(), notifications }
     const reason = requiredString(note, 'note', '处理说明', { min: 2, max: 300 })
     const now = clock().toISOString()
     return transaction(db, () => {
+      // 条件 status='pending' 防止两个馆员同时处理同一笔费用。
       db.prepare(
         `UPDATE fees SET status = ?, note = ?, handled_by = ?, handled_at = ?, updated_at = ?
          WHERE id = ? AND status = 'pending'`,
@@ -127,6 +133,7 @@ export function createFeeService({ db, clock = () => new Date(), notifications }
   }
 
   function createManual(input, actor, ip = '') {
+    // 手工费用只允许 lost/damage/manual，逾期费必须由借阅归还/定时任务自动计算。
     const readerId = integer(input.readerId, 'readerId', '读者', { min: 1 })
     const reader = db.prepare('SELECT * FROM reader_profiles WHERE id = ?').get(readerId)
     if (!reader) throw new AppError(ERR.NOT_FOUND, '读者不存在', 404)

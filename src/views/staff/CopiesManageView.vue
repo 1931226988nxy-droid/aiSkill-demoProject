@@ -1,8 +1,11 @@
 <script setup>
+import PagePanel from '@/components/PagePanel.vue'
+// 文件职责：馆藏副本入库、批量导入、盘点、状态和日志管理页。
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { JccPagePanel, JccQueryBar, JccTable } from '@jcc/shared/components'
+import { DownOutlined } from '@ant-design/icons-vue'
+import { JccModal, JccQueryBar, JccTable } from '@jcc/shared/components'
 import { useTableQuery } from '@jcc/shared/hooks'
 import { api } from '@/api'
 import { getErrorMessage } from '@/api/client'
@@ -15,6 +18,7 @@ const route = useRoute()
 const books = ref([])
 const locations = ref([])
 const modalOpen = ref(false)
+const modalFullscreen = ref(false)
 const modalMode = ref('create')
 const modalLoading = ref(false)
 const modalError = ref('')
@@ -111,6 +115,7 @@ function resetForm() {
 
 function openModal(mode, record = null) {
   modalMode.value = mode
+  modalFullscreen.value = false
   resetForm()
   if (record) {
     form.bookId = record.bookId
@@ -123,6 +128,7 @@ function openModal(mode, record = null) {
 }
 
 async function submitModal() {
+  // 一个弹窗复用四种模式：单本入库、批量入库、盘点、状态变更。
   if (modalLoading.value) return
   modalError.value = ''
   inventoryResult.value = null
@@ -171,6 +177,7 @@ async function submitModal() {
       await refresh()
       modalOpen.value = false
     } else if (modalMode.value === 'inventory') {
+      // 盘点后保留结果面板（已找到/缺失），不立即关闭弹窗。
       inventoryResult.value = await api.copies.inventory({
         barcodes: parseBarcodeText(form.barcodes),
         location: form.location || undefined,
@@ -193,6 +200,7 @@ async function submitModal() {
 }
 
 function openStatus(record) {
+  modalFullscreen.value = false
   form.statusId = record.id
   form.barcode = record.barcode
   form.status = record.status
@@ -224,18 +232,36 @@ onMounted(async () => {
 </script>
 
 <template>
-  <JccPagePanel title="馆藏管理">
-    <template #extra>
-      <a-space wrap>
-        <a-button @click="openModal('inventory')">盘点</a-button>
-        <a-button @click="openModal('bulk')">批量入库</a-button>
-        <a-button type="primary" @click="openModal('create')">新增副本</a-button>
-      </a-space>
-    </template>
-
+  <PagePanel title="馆藏管理">
     <JccQueryBar :loading="loading" @search="search" @reset="reset">
-      <a-input v-model:value="filters.q" class="filter-field" placeholder="条码 / 书名 / ISBN" allow-clear />
-      <a-select v-model:value="filters.bookId" class="filter-field--wide" placeholder="全部图书" allow-clear show-search option-filter-prop="label">
+      <template #actions>
+        <a-space wrap>
+          <a-button type="primary" @click="openModal('create')">新增副本</a-button>
+          <a-button @click="openModal('bulk')">批量入库</a-button>
+          <a-dropdown :trigger="['click']" placement="bottomLeft">
+            <a-button>更多 <DownOutlined /></a-button>
+            <template #overlay>
+              <a-menu>
+                <a-menu-item key="inventory" @click="openModal('inventory')">盘点</a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
+        </a-space>
+      </template>
+      <a-input
+        v-model:value="filters.q"
+        class="filter-field"
+        placeholder="条码 / 书名 / ISBN"
+        allow-clear
+      />
+      <a-select
+        v-model:value="filters.bookId"
+        class="filter-field--wide"
+        placeholder="全部图书"
+        allow-clear
+        show-search
+        option-filter-prop="label"
+      >
         <a-select-option
           v-for="book in books"
           :key="book.id"
@@ -251,7 +277,12 @@ onMounted(async () => {
           {{ meta.label }}
         </a-select-option>
       </a-select>
-      <a-select v-model:value="filters.location" class="filter-field" placeholder="全部馆藏地" allow-clear>
+      <a-select
+        v-model:value="filters.location"
+        class="filter-field"
+        placeholder="全部馆藏地"
+        allow-clear
+      >
         <a-select-option v-for="location in locations" :key="location" :value="location">
           {{ location }}
         </a-select-option>
@@ -272,7 +303,9 @@ onMounted(async () => {
       @retry="refresh"
     >
       <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'barcode'"><code>{{ record.barcode }}</code></template>
+        <template v-if="column.key === 'barcode'"
+          ><code>{{ record.barcode }}</code></template
+        >
         <template v-else-if="column.key === 'book'">
           <div class="table-book-cell">
             <BookCover :title="record.bookTitle" size="sm" />
@@ -292,7 +325,9 @@ onMounted(async () => {
         <template v-else-if="column.key === 'loan'">
           <template v-if="record.readerNo">
             <div>{{ record.readerName }}（{{ record.readerNo }}）</div>
-            <div class="muted small">应还 {{ formatDateTime(record.dueAt, { dateOnly: true }) }}</div>
+            <div class="muted small">
+              应还 {{ formatDateTime(record.dueAt, { dateOnly: true }) }}
+            </div>
           </template>
           <span v-else class="muted">—</span>
         </template>
@@ -315,8 +350,9 @@ onMounted(async () => {
       </template>
     </JccTable>
 
-    <a-modal
+    <JccModal
       v-model:open="modalOpen"
+      v-model:fullscreen="modalFullscreen"
       :title="modalTitle"
       :confirm-loading="modalLoading"
       :ok-text="modalMode === 'inventory' ? '开始盘点' : '确认'"
@@ -325,7 +361,13 @@ onMounted(async () => {
       width="min(620px, 92vw)"
       @ok="submitModal"
     >
-      <a-alert v-if="modalError" type="error" show-icon :message="modalError" style="margin-bottom: 14px" />
+      <a-alert
+        v-if="modalError"
+        type="error"
+        show-icon
+        :message="modalError"
+        style="margin-bottom: 14px"
+      />
       <a-form layout="vertical">
         <template v-if="['create', 'bulk'].includes(modalMode)">
           <a-form-item label="图书" required>
@@ -353,19 +395,34 @@ onMounted(async () => {
           </a-form-item>
         </template>
         <template v-if="modalMode === 'bulk'">
-          <a-form-item label="条码列表" required extra="每行一个，也可用逗号或空格分隔；单次最多 100 个">
-            <a-textarea v-model:value="form.barcodes" :rows="6" placeholder="LIB-01-004&#10;LIB-01-005" />
+          <a-form-item
+            label="条码列表"
+            required
+            extra="每行一个，也可用逗号或空格分隔；单次最多 100 个"
+          >
+            <a-textarea
+              v-model:value="form.barcodes"
+              :rows="6"
+              placeholder="LIB-01-004&#10;LIB-01-005"
+            />
           </a-form-item>
         </template>
         <template v-if="modalMode === 'inventory'">
           <a-form-item label="扫描到的条码" required extra="系统会记录盘点时间，并返回未找到的条码">
-            <a-textarea v-model:value="form.barcodes" :rows="6" placeholder="扫描条码后回车，每行一个" />
+            <a-textarea
+              v-model:value="form.barcodes"
+              :rows="6"
+              placeholder="扫描条码后回车，每行一个"
+            />
           </a-form-item>
         </template>
 
         <template v-if="['create', 'bulk', 'inventory'].includes(modalMode)">
           <div class="form-grid">
-            <a-form-item :label="modalMode === 'inventory' ? '限定馆藏地（选填）' : '馆藏地'" :required="modalMode !== 'inventory'">
+            <a-form-item
+              :label="modalMode === 'inventory' ? '限定馆藏地（选填）' : '馆藏地'"
+              :required="modalMode !== 'inventory'"
+            >
               <a-input v-model:value="form.location" placeholder="如 一楼中文借阅区" />
             </a-form-item>
             <a-form-item v-if="modalMode !== 'inventory'" label="书架位置">
@@ -410,13 +467,9 @@ onMounted(async () => {
           未找到：{{ inventoryResult.missing.join('、') }}
         </template>
       </a-alert>
-    </a-modal>
+    </JccModal>
 
-    <a-drawer
-      v-model:open="logsOpen"
-      title="副本状态变更日志"
-      :width="'min(560px, 92vw)'"
-    >
+    <a-drawer v-model:open="logsOpen" title="副本状态变更日志" :width="'min(560px, 92vw)'">
       <a-spin :spinning="logsLoading">
         <div class="muted small" style="margin-bottom: 14px">
           {{ logsCopy?.barcode }} · {{ logsCopy?.bookTitle }}
@@ -437,5 +490,5 @@ onMounted(async () => {
         </a-timeline>
       </a-spin>
     </a-drawer>
-  </JccPagePanel>
+  </PagePanel>
 </template>

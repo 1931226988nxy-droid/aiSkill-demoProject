@@ -1,3 +1,7 @@
+/**
+ * 文件职责：图书编目、分类、作者、副本、盘点与预约分配服务。
+ */
+
 import { AppError, ERR } from '../domain/errors.js'
 import { writeAudit } from '../lib/audit.js'
 import { paged, parsePaging } from '../lib/pagination.js'
@@ -17,6 +21,19 @@ import {
 
 function splitAuthors(value) {
   return value ? String(value).split('、').filter(Boolean) : []
+}
+
+function categoryFields(input, existing = {}) {
+  const code = requiredString(input.code ?? existing.code, 'code', '分类代码', {
+    max: 20,
+  }).toUpperCase()
+  if (!/^[A-Z0-9_]+$/.test(code)) {
+    throw new AppError(ERR.VALIDATION, '分类代码只能包含大写字母、数字和下划线', 422, {
+      fields: { code: '分类代码只能包含大写字母、数字和下划线' },
+    })
+  }
+  const name = requiredString(input.name ?? existing.name, 'name', '分类名称', { max: 40 })
+  return { code, name }
 }
 
 function mapBook(row) {
@@ -147,18 +164,25 @@ function resolveBookInput(db, input, existing = null) {
     coverUrl: optionalString(input.coverUrl ?? existing?.coverUrl, 'coverUrl', '封面地址', {
       max: 500,
     }),
-    language: optionalString(input.language ?? existing?.language, 'language', '语言', {
-      max: 20,
-    }) || '中文',
+    language:
+      optionalString(input.language ?? existing?.language, 'language', '语言', {
+        max: 20,
+      }) || '中文',
     edition: optionalString(input.edition ?? existing?.edition, 'edition', '版本', { max: 50 }),
     priceCents: moneyToCents(input.price ?? existing?.price ?? 0, 'price', '定价'),
   }
 }
 
 export function createCatalogService({ db, clock = () => new Date(), settings, notifications }) {
+  // 副本恢复可借/新入库后，立即尝试按 FIFO 顺序满足该书的等待预约。
   function assignReservations(bookId, operatorId) {
     return assignAvailableCopies({
-      db, bookId, now: clock(), settings, notifications, operatorId,
+      db,
+      bookId,
+      now: clock(),
+      settings,
+      notifications,
+      operatorId,
     })
   }
   function listCategories() {
@@ -172,13 +196,7 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
   }
 
   function createCategory(input, actor, ip = '') {
-    const code = requiredString(input.code, 'code', '分类代码', { max: 20 }).toUpperCase()
-    if (!/^[A-Z0-9_]+$/.test(code)) {
-      throw new AppError(ERR.VALIDATION, '分类代码只能包含大写字母、数字和下划线', 422, {
-        fields: { code: '分类代码只能包含大写字母、数字和下划线' },
-      })
-    }
-    const name = requiredString(input.name, 'name', '分类名称', { max: 40 })
+    const { code, name } = categoryFields(input)
     const now = clock().toISOString()
     try {
       const result = db
@@ -198,6 +216,66 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
       if (isUniqueConstraint(error)) throw new AppError(ERR.CONFLICT, '分类代码或名称已存在', 409)
       throw error
     }
+  }
+
+  function updateCategory(categoryId, input, actor, ip = '') {
+    const existing = db
+      .prepare('SELECT id, code, name FROM categories WHERE id = ?')
+      .get(categoryId)
+    if (!existing) throw new AppError(ERR.NOT_FOUND, '分类不存在', 404)
+    const { code, name } = categoryFields(input, existing)
+    const now = clock().toISOString()
+    try {
+      return transaction(db, () => {
+        db.prepare('UPDATE categories SET code = ?, name = ? WHERE id = ?').run(
+          code,
+          name,
+          categoryId,
+        )
+        writeAudit(db, {
+          actor,
+          action: 'category.update',
+          objectType: 'category',
+          objectId: categoryId,
+          details: { before: { code: existing.code, name: existing.name }, after: { code, name } },
+          ip,
+          createdAt: now,
+        })
+        return listCategories().find((item) => item.id === categoryId)
+      })
+    } catch (error) {
+      if (isUniqueConstraint(error)) throw new AppError(ERR.CONFLICT, '分类代码或名称已存在', 409)
+      throw error
+    }
+  }
+
+  function deleteCategory(categoryId, actor, ip = '') {
+    const existing = db
+      .prepare('SELECT id, code, name FROM categories WHERE id = ?')
+      .get(categoryId)
+    if (!existing) throw new AppError(ERR.NOT_FOUND, '分类不存在', 404)
+    const bookCount = db
+      .prepare('SELECT COUNT(*) AS count FROM books WHERE category_id = ?')
+      .get(categoryId).count
+    if (bookCount) throw new AppError(ERR.CONFLICT, '该分类仍有图书，不能删除', 409)
+    const childCount = db
+      .prepare('SELECT COUNT(*) AS count FROM categories WHERE parent_id = ?')
+      .get(categoryId).count
+    if (childCount) throw new AppError(ERR.CONFLICT, '该分类仍有子分类，不能删除', 409)
+    const now = clock().toISOString()
+    return transaction(db, () => {
+      db.prepare('DELETE FROM categories WHERE id = ?').run(categoryId)
+      writeAudit(db, {
+        actor,
+        action: 'category.delete',
+        objectType: 'category',
+        objectId: categoryId,
+        details: { code: existing.code, name: existing.name },
+        ip,
+        createdAt: now,
+      })
+      return { id: categoryId }
+    })
   }
 
   function listAuthors() {
@@ -253,7 +331,9 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
       params.push(integer(query.categoryId, 'categoryId', '分类', { min: 1 }))
     }
     if (query.availability === 'available') {
-      where.push("EXISTS (SELECT 1 FROM copies cp WHERE cp.book_id = b.id AND cp.status = 'available')")
+      where.push(
+        "EXISTS (SELECT 1 FROM copies cp WHERE cp.book_id = b.id AND cp.status = 'available')",
+      )
     } else if (query.availability === 'unavailable') {
       where.push(
         "NOT EXISTS (SELECT 1 FROM copies cp WHERE cp.book_id = b.id AND cp.status = 'available')",
@@ -270,7 +350,10 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
       relevance: 'b.created_at',
     }
     const sort = sortMap[query.sort] || 'b.created_at'
-    const order = String(query.order || (query.sort === 'title' ? 'asc' : 'desc')).toLowerCase() === 'asc' ? 'ASC' : 'DESC'
+    const order =
+      String(query.order || (query.sort === 'title' ? 'asc' : 'desc')).toLowerCase() === 'asc'
+        ? 'ASC'
+        : 'DESC'
     const total = Number(
       db.prepare(`SELECT COUNT(*) AS count FROM books b ${whereSql}`).get(...params).count,
     )
@@ -319,6 +402,7 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
   }
 
   function saveAuthors(bookId, authors, now) {
+    // 作者按名称复用，book_authors.position 保留表单中的展示顺序。
     const find = db.prepare('SELECT id FROM authors WHERE name = ? COLLATE NOCASE')
     const insert = db.prepare('INSERT INTO authors (name, created_at) VALUES (?, ?)')
     const link = db.prepare(
@@ -439,6 +523,7 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
     if (book.status === 'off_shelf') return book
     const now = clock().toISOString()
     return transaction(db, () => {
+      // 下架前必须没有在借副本和未完成预约，避免读者已借/已预约的书突然消失。
       const activeLoans = db
         .prepare('SELECT COUNT(*) AS count FROM loans WHERE book_id = ? AND returned_at IS NULL')
         .get(bookId)
@@ -456,9 +541,11 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
       db.prepare(
         `UPDATE books SET status = 'off_shelf', updated_by = ?, updated_at = ? WHERE id = ?`,
       ).run(actor.id, now, bookId)
+      // 可借/维修中的副本随书下架；已借出、已预约、已遗失的副本保持原状态。
       const closingCopies = db
         .prepare(
-          `SELECT id, status FROM copies WHERE book_id = ? AND status IN ('available', 'repair')`,
+          `SELECT id, status, condition_note FROM copies
+           WHERE book_id = ? AND status IN ('available', 'repair')`,
         )
         .all(bookId)
       const closeCopy = db.prepare(
@@ -469,16 +556,98 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
          VALUES (?, ?, 'off_shelf', ?, ?, ?)`,
       )
       const reasonText = requiredString(reason, 'reason', '下架原因', { max: 300 })
+      const closedCopyStates = []
       for (const copy of closingCopies) {
         closeCopy.run(reasonText, now, copy.id)
-        logCopy.run(copy.id, copy.status, reasonText, actor.id, now)
+        const statusLog = logCopy.run(copy.id, copy.status, reasonText, actor.id, now)
+        closedCopyStates.push({
+          id: copy.id,
+          status: copy.status,
+          conditionNote: copy.condition_note,
+          statusLogId: Number(statusLog.lastInsertRowid),
+        })
       }
       writeAudit(db, {
         actor,
         action: 'book.off_shelf',
         objectType: 'book',
         objectId: bookId,
-        details: { reason: reasonText, closedCopies: closingCopies.length },
+        details: {
+          reason: reasonText,
+          closedCopies: closingCopies.length,
+          closedCopyStates,
+        },
+        ip,
+        createdAt: now,
+      })
+      return getBook(bookId)
+    })
+  }
+
+  function onShelfBook(bookId, actor, ip = '') {
+    const book = getBook(bookId, { includeCopies: false })
+    if (book.status === 'active') return getBook(bookId)
+    const now = clock().toISOString()
+    return transaction(db, () => {
+      const lastOffShelf = db
+        .prepare(
+          `SELECT created_at, details FROM audit_logs
+           WHERE action = 'book.off_shelf' AND object_type = 'book' AND object_id = ?
+           ORDER BY id DESC LIMIT 1`,
+        )
+        .get(String(bookId))
+      let details = {}
+      if (lastOffShelf) {
+        try {
+          const parsed = JSON.parse(lastOffShelf.details)
+          if (parsed && typeof parsed === 'object') details = parsed
+        } catch {
+          // 旧审计记录无法解析时只恢复书目，不猜测副本之前的状态。
+        }
+      }
+      const originalStates = Array.isArray(details.closedCopyStates)
+        ? new Map(details.closedCopyStates.map((copy) => [copy.id, copy]))
+        : null
+      const candidates = lastOffShelf && details.reason
+        ? db.prepare(
+            `SELECT cp.id, log.id AS status_log_id, log.from_status AS previous_status
+             FROM copies cp
+             JOIN copy_status_logs log ON log.copy_id = cp.id
+             WHERE cp.book_id = ? AND cp.status = 'off_shelf'
+               AND log.id = (SELECT MAX(latest.id) FROM copy_status_logs latest
+                             WHERE latest.copy_id = cp.id)
+               AND log.to_status = 'off_shelf'
+               AND log.from_status IN ('available', 'repair')
+               AND log.created_at = ? AND log.reason = ?`,
+          ).all(bookId, lastOffShelf.created_at, details.reason)
+        : []
+      const restoringCopies = candidates.filter((copy) => {
+        if (!originalStates) return true
+        const original = originalStates.get(copy.id)
+        return original?.status === copy.previous_status
+          && (original.statusLogId == null || original.statusLogId === copy.status_log_id)
+      })
+      db.prepare(
+        `UPDATE books SET status = 'active', updated_by = ?, updated_at = ? WHERE id = ?`,
+      ).run(actor.id, now, bookId)
+      const restoreCopy = db.prepare(
+        `UPDATE copies SET status = ?, condition_note = ?, updated_at = ? WHERE id = ?`,
+      )
+      const logCopy = db.prepare(
+        `INSERT INTO copy_status_logs (copy_id, from_status, to_status, reason, operator_id, created_at)
+         VALUES (?, 'off_shelf', ?, ?, ?, ?)`,
+      )
+      for (const copy of restoringCopies) {
+        const note = originalStates?.get(copy.id)?.conditionNote || ''
+        restoreCopy.run(copy.previous_status, note, now, copy.id)
+        logCopy.run(copy.id, copy.previous_status, '随图书重新上架，恢复下架前状态', actor.id, now)
+      }
+      writeAudit(db, {
+        actor,
+        action: 'book.on_shelf',
+        objectType: 'book',
+        objectId: bookId,
+        details: { restoredCopies: restoringCopies.length },
         ip,
         createdAt: now,
       })
@@ -491,12 +660,11 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
     const barcode = requiredString(input.barcode, 'barcode', '条码', { max: 50 }).toUpperCase()
     const location = requiredString(input.location, 'location', '馆藏地', { max: 80 })
     const shelf = optionalString(input.shelf, 'shelf', '书架位置', { max: 50 })
-    const status = enumValue(
-      input.status || 'available',
-      'status',
-      '副本状态',
-      ['available', 'repair', 'off_shelf'],
-    )
+    const status = enumValue(input.status || 'available', 'status', '副本状态', [
+      'available',
+      'repair',
+      'off_shelf',
+    ])
     const now = clock().toISOString()
     try {
       return transaction(db, () => {
@@ -510,7 +678,13 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
         db.prepare(
           `INSERT INTO copy_status_logs (copy_id, from_status, to_status, reason, operator_id, created_at)
            VALUES (?, NULL, ?, ?, ?, ?)`,
-        ).run(copyId, status, requiredString(input.reason || '新副本入库', 'reason', '原因', { max: 200 }), actor.id, now)
+        ).run(
+          copyId,
+          status,
+          requiredString(input.reason || '新副本入库', 'reason', '原因', { max: 200 }),
+          actor.id,
+          now,
+        )
         writeAudit(db, {
           actor,
           action: 'copy.create',
@@ -520,6 +694,7 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
           ip,
           createdAt: now,
         })
+        // 新副本若直接入库为可借，必须立即检查等待队列，不能先短暂暴露给普通借阅。
         if (status === 'available') assignReservations(book.id, actor.id)
         return mapCopy(db.prepare(`${COPY_SELECT} WHERE cp.id = ?`).get(copyId))
       })
@@ -572,6 +747,7 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
           logInsert.run(copyId, actor.id, now)
           ids.push(copyId)
         }
+        // 批量入库全部写入后再统一分配，保证同批次副本按 ID 顺序满足队列。
         assignReservations(book.id, actor.id)
         writeAudit(db, {
           actor,
@@ -596,7 +772,9 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
     const params = []
     if (query.q) {
       const value = `%${escapeLike(query.q)}%`
-      where.push("(cp.barcode LIKE ? ESCAPE '\\' OR b.title LIKE ? ESCAPE '\\' OR b.isbn LIKE ? ESCAPE '\\')")
+      where.push(
+        "(cp.barcode LIKE ? ESCAPE '\\' OR b.title LIKE ? ESCAPE '\\' OR b.isbn LIKE ? ESCAPE '\\')",
+      )
       params.push(value, value, value)
     }
     if (query.bookId) {
@@ -652,6 +830,7 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
       'off_shelf',
     ])
     const text = requiredString(reason, 'reason', '变更原因', { min: 2, max: 300 })
+    // 在借/预约保留中的副本不允许直接改状态，必须先走归还、遗失或预约队列流程。
     if (copy.status === 'borrowed' || copy.activeLoanId) {
       throw new AppError(ERR.INVALID_STATUS, '副本仍在借阅中，请先办理归还或遗失登记', 409)
     }
@@ -661,12 +840,9 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
     if (copy.status === nextStatus) return copy
     const now = clock().toISOString()
     return transaction(db, () => {
-      db.prepare('UPDATE copies SET status = ?, condition_note = ?, updated_at = ? WHERE id = ?').run(
-        nextStatus,
-        text,
-        now,
-        copyId,
-      )
+      db.prepare(
+        'UPDATE copies SET status = ?, condition_note = ?, updated_at = ? WHERE id = ?',
+      ).run(nextStatus, text, now, copyId)
       db.prepare(
         `INSERT INTO copy_status_logs (copy_id, from_status, to_status, reason, operator_id, created_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
@@ -686,6 +862,7 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
   }
 
   function inventory(input, actor, ip = '') {
+    // 盘点只更新 last_inventory_at，不改副本可借状态；指定馆藏地时异地条码计入缺失。
     if (!Array.isArray(input.barcodes) || !input.barcodes.length) {
       throw new AppError(ERR.VALIDATION, '请扫描至少一个条码', 422, {
         fields: { barcodes: '请扫描至少一个条码' },
@@ -696,7 +873,9 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
     const now = clock().toISOString()
     return transaction(db, () => {
       const find = db.prepare('SELECT * FROM copies WHERE barcode = ?')
-      const update = db.prepare('UPDATE copies SET last_inventory_at = ?, updated_at = ? WHERE id = ?')
+      const update = db.prepare(
+        'UPDATE copies SET last_inventory_at = ?, updated_at = ? WHERE id = ?',
+      )
       const found = []
       const missing = []
       for (const barcode of barcodes) {
@@ -754,12 +933,15 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
   return {
     listCategories,
     createCategory,
+    updateCategory,
+    deleteCategory,
     listAuthors,
     listBooks,
     getBook,
     createBook,
     updateBook,
     offShelfBook,
+    onShelfBook,
     createCopy,
     bulkCreateCopies,
     listCopies,

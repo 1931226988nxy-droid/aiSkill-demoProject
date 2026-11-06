@@ -1,3 +1,7 @@
+/**
+ * 文件职责：账号多角色、角色权限、设置、公告、审计等系统管理服务。
+ */
+
 import { randomBytes } from 'node:crypto'
 import { AppError, ERR } from '../domain/errors.js'
 import { writeAudit } from '../lib/audit.js'
@@ -59,6 +63,7 @@ function rolesForUsers(db, userIds) {
 }
 
 function resolveRoleCodes(db, input) {
+  // 兼容旧客户端传 roleCode 单角色，新接口统一使用 roleCodes 数组。
   const raw = Array.isArray(input.roleCodes)
     ? input.roleCodes
     : input.roleCode
@@ -96,6 +101,7 @@ function nextReaderNumber(db) {
 }
 
 function ensureReaderProfile(db, userId, displayName, roles, now) {
+  // 拥有读者角色的账号必须有 reader_profiles；馆员/管理员账号可以按需附加读者身份。
   if (!roles.some((role) => role.code === 'reader')) return null
   const existing = db.prepare('SELECT id FROM reader_profiles WHERE user_id = ?').get(userId)
   if (existing) return existing.id
@@ -127,6 +133,7 @@ function mapAnnouncement(row) {
 
 export function createAdminService({ db, clock = () => new Date(), settings }) {
   function assertManageableRoles(roles, actor) {
+    // 非管理员即使拿到了 user.manage，也不能分配管理员角色或权限高于自己的角色，防止提权。
     if (actor?.role?.code === 'admin') return
     const allowed = new Set(db.prepare(
       `SELECT p.code FROM role_permissions rp
@@ -149,6 +156,7 @@ export function createAdminService({ db, clock = () => new Date(), settings }) {
   }
 
   function assertAdminTarget(current, actor) {
+    // 非管理员不能编辑/重置管理员账号，避免通过账号管理接口绕过角色边界。
     if (actor?.role?.code === 'admin') return
     const adminRole = db.prepare(
       `SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
@@ -158,6 +166,7 @@ export function createAdminService({ db, clock = () => new Date(), settings }) {
   }
 
   function listUsers(filters = {}) {
+    // 纯读者账号由读者管理维护；只要账号还拥有任意非读者角色就出现在这里。
     const { page, pageSize, offset } = parsePaging(filters)
     const where = [
       `EXISTS (SELECT 1 FROM user_roles ur0 JOIN roles rr0 ON rr0.id = ur0.role_id
@@ -209,6 +218,7 @@ export function createAdminService({ db, clock = () => new Date(), settings }) {
     }
     const now = clock().toISOString()
     try {
+      // users 主角色、user_roles 全部角色和可选读者档案必须同事务创建。
       return transaction(db, () => {
         const result = db
           .prepare(
@@ -275,6 +285,7 @@ export function createAdminService({ db, clock = () => new Date(), settings }) {
     const currentCodes = currentRoles.map((role) => role.code).sort().join(',')
     const nextCodes = roles.map((role) => role.code).sort().join(',')
     const rolesChanged = currentCodes !== nextCodes || primaryRole.id !== current.role_id
+    // 防止管理员把自己停用或降权后失去管理入口；其他账号仍可由管理员调整。
     if (id === actor.id && (status === 'disabled' || rolesChanged)) {
       throw new AppError(ERR.CONFLICT, '不能停用自己的账号或修改自己的角色', 409)
     }
@@ -283,6 +294,7 @@ export function createAdminService({ db, clock = () => new Date(), settings }) {
       db.prepare(
         'UPDATE users SET display_name = ?, role_id = ?, status = ?, updated_at = ? WHERE id = ?',
       ).run(displayName, primaryRole.id, status, now, id)
+      // 角色有变化时全量重建 user_roles，保证主角色和角色集合一致。
       if (roleCodesProvided || rolesChanged) {
         db.prepare('DELETE FROM user_roles WHERE user_id = ?').run(id)
         const insert = db.prepare(
@@ -461,6 +473,7 @@ export function createAdminService({ db, clock = () => new Date(), settings }) {
       throw new AppError(ERR.VALIDATION, `未知权限：${unknown.join('、')}`, 422)
     }
     if (actor?.role?.code !== 'admin') {
+      // 非管理员只能授予自己当前已拥有的权限，防止通过角色编辑间接提权。
       const ownPermissions = new Set(db.prepare(
         `SELECT p.code FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id
          WHERE rp.role_id = ? AND p.status = 'active'`,

@@ -1,0 +1,48 @@
+{
+  "name": "@jcc/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js",
+    "./components": "./src/components/index.js",
+    "./hooks": "./src/hooks/index.js",
+    "./api": "./src/api.js",
+    "./utils": "./src/utils.js",
+    "./validators": "./src/validators.js",
+    "./theme": "./src/theme/index.js",
+    "./assets": "./src/assets.js",
+    "./vite": "./vite.live.js",
+    "./assets/document.svg": "./assets/document.svg",
+    "./assets/add.svg": "./assets/add.svg",
+    "./style.css": "./src/style.css"
+  },
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "peerDependencies": {
+    "vue": "^3.5.0",
+    "ant-design-vue": "^4.2.6",
+    "@ant-design/icons-vue": "^7.0.0"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "quality": "npm run format:check && npm test",
+    "format": "prettier --write \"src/**/*.{js,vue,css}\" \"docs/**/*.md\" \"tests/**/*.js\" \"*.{js,json}\"",
+    "format:check": "prettier --check \"src/**/*.{js,vue,css}\" \"docs/**/*.md\" \"tests/**/*.js\" \"*.{js,json}\""
+  },
+  "devDependencies": {
+    "@ant-design/icons-vue": "7.0.1",
+    "@vitejs/plugin-vue": "6.0.10",
+    "@vue/test-utils": "2.4.6",
+    "ant-design-vue": "4.2.6",
+    "jsdom": "26.1.0",
+    "prettier": "^3.6.0",
+    "vite": "8.3.5",
+    "vitest": "^4.0.0",
+    "vue": "3.5.44"
+  }
+}

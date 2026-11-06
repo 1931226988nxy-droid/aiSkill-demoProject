@@ -1,3 +1,7 @@
+/**
+ * 文件职责：预约分配、费用累计、权限提升等业务回归测试。
+ */
+
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { apiRequest, createTestContext, startTestServer } from './helpers.js'

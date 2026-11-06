@@ -1,3 +1,7 @@
+/**
+ * 文件职责：手机号、身份证脱敏与读者对象序列化。
+ */
+
 export function maskPhone(value) {
   const text = String(value || '')
   if (!text) return ''
@@ -11,6 +15,7 @@ export function maskIdCard(value) {
 }
 
 export function serializeReader(row, { revealSensitive = false } = {}) {
+  // 默认输出脱敏版本；只有 reader.manage 的详情接口显式传 revealSensitive=true。
   if (!row) return null
   return {
     id: row.id,

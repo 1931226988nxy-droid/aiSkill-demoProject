@@ -1,7 +1,9 @@
 <script setup>
+import PagePanel from '@/components/PagePanel.vue'
+// 文件职责：站内通知分页列表与已读操作。
 import { onMounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { JccPagePanel, JccQueryBar, JccTable } from '@jcc/shared/components'
+import { JccQueryBar, JccTable } from '@jcc/shared/components'
 import { useTableQuery } from '@jcc/shared/hooks'
 import { api } from '@/api'
 import { getErrorMessage } from '@/api/client'
@@ -36,20 +38,31 @@ const columns = [
   { title: '操作', key: 'action', width: 90, fixed: 'right' },
 ]
 
-const { filters, page, pageSize, items, total, loading, error, refresh, search, reset, changePage } =
-  useTableQuery({
-    initialFilters: { unread: 'all' },
-    pageSize: 10,
-    fetcher: ({ page: pageValue, pageSize: sizeValue, filters: query, signal }) =>
-      api.notifications.list(
-        {
-          page: pageValue,
-          pageSize: sizeValue,
-          unread: query.unread === 'unread' ? 1 : undefined,
-        },
-        { signal },
-      ),
-  })
+const {
+  filters,
+  page,
+  pageSize,
+  items,
+  total,
+  loading,
+  error,
+  refresh,
+  search,
+  reset,
+  changePage,
+} = useTableQuery({
+  initialFilters: { unread: 'all' },
+  pageSize: 10,
+  fetcher: ({ page: pageValue, pageSize: sizeValue, filters: query, signal }) =>
+    api.notifications.list(
+      {
+        page: pageValue,
+        pageSize: sizeValue,
+        unread: query.unread === 'unread' ? 1 : undefined,
+      },
+      { signal },
+    ),
+})
 
 async function markRead(record) {
   if (record.readAt) return
@@ -81,12 +94,11 @@ onMounted(refresh)
 </script>
 
 <template>
-  <JccPagePanel title="站内通知">
-    <template #extra>
-      <a-button :loading="markingAll" @click="markAll">全部标记已读</a-button>
-    </template>
-
+  <PagePanel title="站内通知">
     <JccQueryBar :loading="loading" @search="search" @reset="reset">
+      <template #actions>
+        <a-button :loading="markingAll" @click="markAll">全部标记已读</a-button>
+      </template>
       <a-select v-model:value="filters.unread" class="filter-field" aria-label="阅读状态">
         <a-select-option value="all">全部通知</a-select-option>
         <a-select-option value="unread">仅未读</a-select-option>
@@ -136,7 +148,7 @@ onMounted(refresh)
         </template>
       </template>
     </JccTable>
-  </JccPagePanel>
+  </PagePanel>
 </template>
 
 <style scoped>

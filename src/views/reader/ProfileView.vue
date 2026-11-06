@@ -1,7 +1,9 @@
 <script setup>
+import PagePanel from '@/components/PagePanel.vue'
+// 文件职责：个人资料编辑、隐私说明和修改密码弹窗。
 import { onMounted, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { JccPagePanel } from '@jcc/shared/components'
+import { JccModal } from '@jcc/shared/components'
 import { api } from '@/api'
 import { getErrorMessage } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
@@ -14,6 +16,7 @@ const formRef = ref()
 const passwordFormRef = ref()
 const saving = ref(false)
 const passwordOpen = ref(false)
+const passwordFullscreen = ref(false)
 const changingPassword = ref(false)
 const errorText = ref('')
 const passwordError = ref('')
@@ -53,6 +56,7 @@ const passwordRules = {
 }
 
 function fillForm() {
+  // 资料表单从当前会话回填；手机号等字段在会话中已按接口权限返回。
   formState.displayName = auth.user?.displayName || ''
   formState.phone = auth.user?.reader?.phone || ''
   formState.email = auth.user?.reader?.email || ''
@@ -69,6 +73,7 @@ async function save() {
   }
   saving.value = true
   try {
+    // 更新成功后 store 会用后端返回的 user 重新填充，避免本地字段与服务端不一致。
     await auth.updateProfile({ ...formState })
     message.success('个人资料已保存')
     fillForm()
@@ -80,6 +85,7 @@ async function save() {
 }
 
 function openPassword() {
+  passwordFullscreen.value = false
   passwordError.value = ''
   passwordForm.oldPassword = ''
   passwordForm.newPassword = ''
@@ -114,7 +120,7 @@ onMounted(fillForm)
 </script>
 
 <template>
-  <JccPagePanel title="个人资料">
+  <PagePanel title="个人资料">
     <template #extra><a-button @click="openPassword">修改密码</a-button></template>
 
     <PageBody mode="scroll" label="个人资料内容">
@@ -181,8 +187,9 @@ onMounted(fillForm)
       </div>
     </PageBody>
 
-    <a-modal
+    <JccModal
       v-model:open="passwordOpen"
+      v-model:fullscreen="passwordFullscreen"
       title="修改登录密码"
       :confirm-loading="changingPassword"
       ok-text="确认修改"
@@ -217,8 +224,8 @@ onMounted(fillForm)
           />
         </a-form-item>
       </a-form>
-    </a-modal>
-  </JccPagePanel>
+    </JccModal>
+  </PagePanel>
 </template>
 
 <style scoped>

@@ -1,4 +1,5 @@
 <script setup>
+// 文件职责：读者自助注册页。
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'

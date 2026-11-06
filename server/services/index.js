@@ -1,3 +1,7 @@
+/**
+ * 文件职责：后端服务依赖装配。
+ */
+
 import { createAdminService } from './admin-service.js'
 import { createAccessService } from './access-service.js'
 import { createAuthService } from './auth-service.js'
@@ -13,6 +17,7 @@ import { createReservationService } from './reservation-service.js'
 import { createSettingsService } from './settings-service.js'
 
 export function createServices({ db, clock = () => new Date(), notificationAdapter = null }) {
+  // 装配顺序体现依赖关系：设置/通知是基础服务，认证、馆藏、借阅等再依赖它们。
   const settings = createSettingsService({ db, clock })
   const notifications = createNotificationService({ db, clock, externalAdapter: notificationAdapter })
   const auth = createAuthService({ db, clock, settings, notifications })
@@ -26,6 +31,7 @@ export function createServices({ db, clock = () => new Date(), notificationAdapt
   const navigation = createNavigationService({ db })
   const reports = createReportService({ db, clock })
   const dashboard = createDashboardService({ db, clock })
+  // 服务通过闭包共享同一个 db 和时钟，测试可注入固定时钟来验证时间边界。
   return {
     db,
     clock,

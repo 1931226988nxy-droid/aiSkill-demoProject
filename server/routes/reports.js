@@ -1,3 +1,7 @@
+/**
+ * 文件职责：工作台、统计报表与 CSV 导出接口。
+ */
+
 import { Router } from 'express'
 import { toShanghaiDateString } from '../lib/time.js'
 

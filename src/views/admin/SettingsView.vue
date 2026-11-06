@@ -1,7 +1,8 @@
 <script setup>
+import PagePanel from '@/components/PagePanel.vue'
+// 文件职责：借阅、预约、费用和注册开关配置页。
 import { onMounted, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { JccPagePanel } from '@jcc/shared/components'
 import { api } from '@/api'
 import { getErrorMessage } from '@/api/client'
 import PageBody from '@/components/PageBody.vue'
@@ -40,6 +41,7 @@ async function load() {
   errorText.value = ''
   try {
     const data = await api.admin.settings()
+    // 后端金额以“分”存储，表单展示“元”，保存时再转回分。
     Object.assign(formState, {
       library_name: data.library_name,
       loan_days: data.loan_days,
@@ -88,6 +90,7 @@ async function save() {
 }
 
 async function runJobs() {
+  // 手动触发与定时任务相同的扫描：逾期费用/提醒、到期提醒、预约过期和会话清理。
   runningJobs.value = true
   jobResult.value = null
   try {
@@ -104,7 +107,7 @@ onMounted(load)
 </script>
 
 <template>
-  <JccPagePanel title="系统设置">
+  <PagePanel title="系统设置">
     <template #extra>
       <a-space wrap>
         <a-button :loading="runningJobs" @click="runJobs">立即执行逾期 / 预约扫描</a-button>
@@ -189,5 +192,5 @@ onMounted(load)
       </div>
     </a-spin>
     </PageBody>
-  </JccPagePanel>
+  </PagePanel>
 </template>

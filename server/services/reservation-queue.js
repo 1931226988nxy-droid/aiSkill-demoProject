@@ -1,6 +1,11 @@
+/**
+ * 文件职责：预约队列排序、副本保留、顺延与释放。
+ */
+
 import { endOfShanghaiDayAfter, toShanghaiDateTimeString } from '../lib/time.js'
 
 export function getNextWaitingReservation(db, bookId) {
+  // 先到先得：created_at 相同再按 id 兜底，保证队列位置稳定可复现。
   return db
     .prepare(
       `SELECT r.*, rp.user_id, rp.reader_no, rp.full_name AS reader_name, b.title AS book_title
@@ -40,7 +45,9 @@ export function promoteNextReservation({
   const next = getNextWaitingReservation(db, bookId)
   if (!next) return null
   const nowIso = now.toISOString()
+  // 取书期限从“当前时间”起算，截止到上海时区第 N 天的 23:59:59.999。
   const pickupExpiresAt = endOfShanghaiDayAfter(now, settings.get('reservation_hold_days'))
+  // 条件 status='waiting' 保证同一条预约不会被两个归还请求重复升级。
   db.prepare(
     `UPDATE reservations
      SET status = 'ready', copy_id = ?, ready_at = ?, pickup_expires_at = ?
@@ -72,8 +79,10 @@ export function assignAvailableCopies({
   notifications,
   operatorId = null,
 }) {
+  // 下架图书不参与预约分配，避免给已下架图书保留副本。
   const book = db.prepare('SELECT status FROM books WHERE id = ?').get(bookId)
   if (book?.status !== 'active') return []
+  // 每分配一个副本就取队首；没有等待者时立即停止，保持 FIFO 顺序。
   const copies = db
     .prepare("SELECT id FROM copies WHERE book_id = ? AND status = 'available' ORDER BY id")
     .all(bookId)
@@ -104,6 +113,7 @@ export function releaseReservation({
   reason = '',
 }) {
   const nowIso = now.toISOString()
+  // 先关闭当前预约，再决定副本是顺延给下一位还是恢复可借。
   db.prepare('UPDATE reservations SET status = ?, closed_at = ?, note = ? WHERE id = ?').run(
     status,
     nowIso,

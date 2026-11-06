@@ -1,3 +1,7 @@
+/**
+ * 文件职责：预约创建、查询与取消接口。
+ */
+
 import { Router } from 'express'
 import { numericId, requestContext } from './helpers.js'
 

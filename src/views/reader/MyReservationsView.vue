@@ -1,7 +1,9 @@
 <script setup>
+import PagePanel from '@/components/PagePanel.vue'
+// 文件职责：读者预约队列、取书期限和取消操作页。
 import { onMounted, ref } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { JccPagePanel, JccQueryBar, JccTable } from '@jcc/shared/components'
+import { JccQueryBar, JccTable } from '@jcc/shared/components'
 import { useTableQuery } from '@jcc/shared/hooks'
 import { api } from '@/api'
 import { getErrorMessage } from '@/api/client'
@@ -20,20 +22,31 @@ const columns = [
   { title: '操作', key: 'action', width: 90, fixed: 'right' },
 ]
 
-const { filters, page, pageSize, items, total, loading, error, refresh, search, reset, changePage } =
-  useTableQuery({
-    initialFilters: { status: 'all' },
-    pageSize: 10,
-    fetcher: ({ page: pageValue, pageSize: sizeValue, filters: query, signal }) =>
-      api.reservations.my(
-        {
-          page: pageValue,
-          pageSize: sizeValue,
-          status: query.status || 'all',
-        },
-        { signal },
-      ),
-  })
+const {
+  filters,
+  page,
+  pageSize,
+  items,
+  total,
+  loading,
+  error,
+  refresh,
+  search,
+  reset,
+  changePage,
+} = useTableQuery({
+  initialFilters: { status: 'all' },
+  pageSize: 10,
+  fetcher: ({ page: pageValue, pageSize: sizeValue, filters: query, signal }) =>
+    api.reservations.my(
+      {
+        page: pageValue,
+        pageSize: sizeValue,
+        status: query.status || 'all',
+      },
+      { signal },
+    ),
+})
 
 function cancel(record) {
   Modal.confirm({
@@ -60,8 +73,7 @@ onMounted(refresh)
 </script>
 
 <template>
-  <JccPagePanel title="我的预约">
-    <template #extra><span class="muted small">共 {{ total }} 条预约</span></template>
+  <PagePanel title="我的预约">
     <a-alert
       type="info"
       show-icon
@@ -70,6 +82,9 @@ onMounted(refresh)
     />
 
     <JccQueryBar :loading="loading" @search="search" @reset="reset">
+      <template #actions>
+        <span class="muted small">共 {{ total }} 条预约</span>
+      </template>
       <a-select v-model:value="filters.status" class="filter-field" aria-label="预约状态">
         <a-select-option value="all">全部预约</a-select-option>
         <a-select-option value="active">进行中</a-select-option>
@@ -137,5 +152,5 @@ onMounted(refresh)
         </template>
       </template>
     </JccTable>
-  </JccPagePanel>
+  </PagePanel>
 </template>

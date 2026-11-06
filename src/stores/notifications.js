@@ -1,3 +1,7 @@
+/**
+ * 文件职责：未读通知计数与已读操作。
+ */
+
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { api } from '@/api'

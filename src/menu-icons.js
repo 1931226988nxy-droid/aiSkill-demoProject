@@ -1,3 +1,7 @@
+/**
+ * 文件职责：动态菜单图标白名单与组件解析。
+ */
+
 import {
   AppstoreOutlined,
   BarChartOutlined,

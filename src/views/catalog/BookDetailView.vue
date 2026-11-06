@@ -1,8 +1,9 @@
 <script setup>
+import PagePanel from '@/components/PagePanel.vue'
+// 文件职责：图书详情、馆藏状态和读者预约入口。
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import { JccPagePanel } from '@jcc/shared/components'
 import { api } from '@/api'
 import { getErrorMessage } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
@@ -24,6 +25,7 @@ const availableCopies = computed(() =>
   (book.value?.copies || []).filter((copy) => copy.status === 'available'),
 )
 const canReserve = computed(
+  // 只有读者、图书在架且确实没有可借副本时才显示预约按钮。
   () =>
     auth.isReader &&
     book.value?.status === 'active' &&
@@ -56,6 +58,7 @@ function reserve() {
     onOk: async () => {
       reserving.value = true
       try {
+        // 预约成功后重新加载详情，队列位置以服务端计算为准。
         const result = await api.reservations.create({ bookId: book.value.id })
         message.success(`预约成功，当前排队第 ${result.queuePosition} 位`)
         await load()
@@ -72,7 +75,7 @@ onMounted(load)
 </script>
 
 <template>
-  <JccPagePanel title="图书详情">
+  <PagePanel title="图书详情">
     <template #extra>
       <a-space wrap>
         <a-button
@@ -215,7 +218,7 @@ onMounted(load)
       </section>
     </div>
     </PageBody>
-  </JccPagePanel>
+  </PagePanel>
 </template>
 
 <style scoped>

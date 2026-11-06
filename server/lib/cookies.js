@@ -1,3 +1,7 @@
+/**
+ * 文件职责：轻量 Cookie 解析与安全会话 Cookie 序列化。
+ */
+
 export function parseCookies(header = '') {
   const result = {}
   for (const part of String(header).split(';')) {
@@ -16,6 +20,7 @@ export function parseCookies(header = '') {
 }
 
 export function sessionCookie(token, { secure = false, maxAge = 7 * 24 * 60 * 60 } = {}) {
+  // HttpOnly 防 XSS 读取，SameSite=Strict 防跨站携带；HTTPS 部署时通过 secure 追加 Secure。
   return [
     `lib_session=${encodeURIComponent(token)}`,
     'Path=/',

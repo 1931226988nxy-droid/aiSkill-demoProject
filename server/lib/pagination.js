@@ -1,3 +1,7 @@
+/**
+ * 文件职责：分页参数校验与列表响应组装。
+ */
+
 import { AppError, ERR } from '../domain/errors.js'
 
 export function parsePaging(query = {}, { defaultPageSize = 20, maxPageSize = 100 } = {}) {

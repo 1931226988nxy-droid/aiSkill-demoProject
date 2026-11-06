@@ -1,7 +1,9 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import PagePanel from '@/components/PagePanel.vue'
+// 文件职责：公告草稿、发布、编辑和撤回管理页。
+import { onMounted, ref } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { JccPagePanel, JccQueryBar, JccTable } from '@jcc/shared/components'
+import { JccFormModal, JccQueryBar, JccTable } from '@jcc/shared/components'
 import { useTableQuery } from '@jcc/shared/hooks'
 import { api } from '@/api'
 import { getErrorMessage } from '@/api/client'
@@ -11,11 +13,8 @@ import StatusTag from '@/components/StatusTag.vue'
 
 const modalOpen = ref(false)
 const modalMode = ref('create')
-const saving = ref(false)
-const modalError = ref('')
-const formRef = ref()
 const editing = ref(null)
-const form = reactive({ title: '', content: '', publishNow: false })
+const initialValues = ref({ title: '', content: '', publishNow: false })
 const formRules = {
   title: [{ required: true, message: '请输入公告标题', trigger: 'blur' }],
   content: [{ required: true, message: '请输入公告内容', trigger: 'blur' }],
@@ -30,73 +29,73 @@ const columns = [
   { title: '操作', key: 'action', width: 200, fixed: 'right' },
 ]
 
-const { filters, page, pageSize, items, total, loading, error, refresh, search, reset, changePage } =
-  useTableQuery({
-    initialFilters: { q: '', status: 'all' },
-    pageSize: 10,
-    fetcher: ({ page: pageValue, pageSize: sizeValue, filters: query, signal }) =>
-      api.admin.announcements(
-        {
-          page: pageValue,
-          pageSize: sizeValue,
-          q: query.q || undefined,
-          status: query.status === 'all' ? undefined : query.status,
-        },
-        { signal },
-      ),
-  })
+const {
+  filters,
+  page,
+  pageSize,
+  items,
+  total,
+  loading,
+  error,
+  refresh,
+  search,
+  reset,
+  changePage,
+} = useTableQuery({
+  initialFilters: { q: '', status: 'all' },
+  pageSize: 10,
+  fetcher: ({ page: pageValue, pageSize: sizeValue, filters: query, signal }) =>
+    api.admin.announcements(
+      {
+        page: pageValue,
+        pageSize: sizeValue,
+        q: query.q || undefined,
+        status: query.status === 'all' ? undefined : query.status,
+      },
+      { signal },
+    ),
+})
 
 function openCreate() {
   modalMode.value = 'create'
   editing.value = null
-  modalError.value = ''
-  form.title = ''
-  form.content = ''
-  form.publishNow = false
+  initialValues.value = { title: '', content: '', publishNow: false }
   modalOpen.value = true
 }
 
 function openEdit(record) {
   modalMode.value = 'edit'
   editing.value = record
-  modalError.value = ''
-  form.title = record.title
-  form.content = record.content
-  form.publishNow = false
+  initialValues.value = { title: record.title, content: record.content, publishNow: false }
   modalOpen.value = true
 }
 
-async function save() {
-  if (saving.value) return
-  modalError.value = ''
-  try {
-    await formRef.value.validate()
-  } catch {
-    return
+function submitAnnouncement(values, { signal }) {
+  if (modalMode.value === 'create') {
+    return api.admin.createAnnouncement(
+      {
+        title: values.title,
+        content: values.content,
+        status: values.publishNow ? 'published' : 'draft',
+      },
+      { signal },
+    )
   }
-  saving.value = true
-  try {
-    if (modalMode.value === 'create') {
-      await api.admin.createAnnouncement({
-        title: form.title,
-        content: form.content,
-        status: form.publishNow ? 'published' : 'draft',
-      })
-      message.success(form.publishNow ? '公告已发布' : '公告草稿已保存')
-    } else {
-      await api.admin.updateAnnouncement(editing.value.id, {
-        title: form.title,
-        content: form.content,
-      })
-      message.success('公告已更新')
-    }
-    modalOpen.value = false
-    await refresh()
-  } catch (error) {
-    modalError.value = getErrorMessage(error)
-  } finally {
-    saving.value = false
-  }
+  return api.admin.updateAnnouncement(
+    editing.value.id,
+    {
+      title: values.title,
+      content: values.content,
+    },
+    { signal },
+  )
+}
+
+async function afterSaved(_result, values) {
+  message.success(
+    modalMode.value === 'edit' ? '公告已更新' : values.publishNow ? '公告已发布' : '公告草稿已保存',
+  )
+  await refresh()
 }
 
 function changeStatus(record, status) {
@@ -123,11 +122,17 @@ onMounted(refresh)
 </script>
 
 <template>
-  <JccPagePanel title="公告管理">
-    <template #extra><a-button type="primary" @click="openCreate">新增公告</a-button></template>
-
+  <PagePanel title="公告管理">
     <JccQueryBar :loading="loading" @search="search" @reset="reset">
-      <a-input v-model:value="filters.q" class="filter-field--wide" placeholder="标题或内容" allow-clear />
+      <template #actions>
+        <a-button type="primary" @click="openCreate">新增公告</a-button>
+      </template>
+      <a-input
+        v-model:value="filters.q"
+        class="filter-field--wide"
+        placeholder="标题或内容"
+        allow-clear
+      />
       <a-select v-model:value="filters.status" class="filter-field" aria-label="公告状态">
         <a-select-option value="all">全部状态</a-select-option>
         <a-select-option value="draft">草稿</a-select-option>
@@ -191,30 +196,28 @@ onMounted(refresh)
       </template>
     </JccTable>
 
-    <a-modal
+    <JccFormModal
       v-model:open="modalOpen"
       :title="modalMode === 'create' ? '新增公告' : '编辑公告'"
-      :confirm-loading="saving"
-      ok-text="保存"
-      cancel-text="取消"
-      :mask-closable="false"
+      :initial-values="initialValues"
+      :rules="formRules"
+      :submit="submitAnnouncement"
       width="min(720px, 94vw)"
-      @ok="save"
+      @saved="afterSaved"
     >
-      <a-alert v-if="modalError" type="error" show-icon :message="modalError" style="margin-bottom: 14px" />
-      <a-form ref="formRef" :model="form" :rules="formRules" layout="vertical">
+      <template #default="{ model }">
         <a-form-item label="标题" name="title">
-          <a-input v-model:value="form.title" :maxlength="120" show-count />
+          <a-input v-model:value="model.title" :maxlength="120" show-count />
         </a-form-item>
         <a-form-item label="内容" name="content">
-          <a-textarea v-model:value="form.content" :rows="8" :maxlength="5000" show-count />
+          <a-textarea v-model:value="model.content" :rows="8" :maxlength="5000" show-count />
         </a-form-item>
         <a-form-item v-if="modalMode === 'create'" label="发布方式">
-          <a-checkbox v-model:checked="form.publishNow">创建后立即发布</a-checkbox>
+          <a-checkbox v-model:checked="model.publishNow">创建后立即发布</a-checkbox>
         </a-form-item>
-      </a-form>
-    </a-modal>
-  </JccPagePanel>
+      </template>
+    </JccFormModal>
+  </PagePanel>
 </template>
 
 <style scoped>

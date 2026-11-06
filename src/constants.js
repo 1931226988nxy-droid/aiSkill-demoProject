@@ -1,3 +1,8 @@
+/**
+ * 文件职责：前端状态标签、权限/角色展示和菜单权限常量。
+ */
+
+// 前端展示用状态映射；code 必须与后端 domain/constants.js 保持一致。
 export const COPY_STATUS_META = {
   available: { label: '可借', color: 'green' },
   borrowed: { label: '已借出', color: 'blue' },
@@ -56,24 +61,4 @@ export const ROLE_LABELS = {
   admin: '管理员',
   librarian: '馆员',
   reader: '读者',
-}
-
-export const MENU_PERMISSIONS = {
-  workbench: null,
-  catalog: 'book.read',
-  myLoans: null,
-  myReservations: null,
-  myFees: null,
-  announcements: null,
-  desk: 'circulation.manage',
-  catalogManage: 'book.manage',
-  copies: 'copy.manage',
-  readers: 'reader.manage',
-  reservationDesk: 'reservation.manage',
-  fees: 'fee.manage',
-  reports: 'report.view',
-  settings: 'settings.manage',
-  users: 'user.manage',
-  audit: 'audit.view',
-  announcementManage: 'announcement.manage',
 }

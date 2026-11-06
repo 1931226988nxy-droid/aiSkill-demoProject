@@ -1,6 +1,11 @@
+/**
+ * 文件职责：Asia/Shanghai 时间边界、逾期天数和数据库 UTC 时间工具。
+ */
+
 const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000
 export const DAY_MS = 24 * 60 * 60 * 1000
 
+// 不依赖运行机器时区：先把时间平移到 UTC+8，再用 getUTC* 读取上海本地年月日。
 export function shanghaiParts(value) {
   const date = value instanceof Date ? value : new Date(value)
   const shifted = new Date(date.getTime() + SHANGHAI_OFFSET_MS)
@@ -36,12 +41,14 @@ export function startOfShanghaiDate(dateOnly) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateOnly || ''))
   if (!match) return null
   const [, year, month, day] = match
+  // 上海 00:00 对应 UTC 前一日 16:00，因此用 -8 小时构造。
   return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), -8, 0, 0, 0)).toISOString()
 }
 
 export function endOfShanghaiDate(dateOnly) {
   const start = startOfShanghaiDate(dateOnly)
   if (!start) return null
+  // 结束时间是次日 00:00 前 1ms，数据库比较可直接使用 < 或 <=。
   return new Date(new Date(start).getTime() + DAY_MS - 1).toISOString()
 }
 
@@ -55,6 +62,7 @@ export function startOfNextShanghaiDate(dateOnly) {
 export function endOfShanghaiDayAfter(value, days = 0) {
   const date = value instanceof Date ? value : new Date(value)
   const { year, month, day } = shanghaiParts(date)
+  // UTC 15:59:59.999 正好是上海次日 23:59:59.999。
   return new Date(Date.UTC(year, month - 1, day + days, 15, 59, 59, 999)).toISOString()
 }
 
@@ -67,6 +75,7 @@ export function overdueDays(dueAt, now = new Date()) {
   const due = new Date(dueAt).getTime()
   const current = (now instanceof Date ? now : new Date(now)).getTime()
   if (!Number.isFinite(due) || current <= due) return 0
+  // 超过到期时间哪怕 1ms 也按第 1 天计费，符合“到期日次日开始逾期”的业务口径。
   return Math.floor((current - due) / DAY_MS) + 1
 }
 

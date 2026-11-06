@@ -1,3 +1,7 @@
+/**
+ * 文件职责：借还、续借、遗失登记与借阅查询接口。
+ */
+
 import { Router } from 'express'
 import { numericId, requestContext } from './helpers.js'
 

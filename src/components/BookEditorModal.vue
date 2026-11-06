@@ -1,4 +1,5 @@
 <script setup>
+// 文件职责：图书新增/编辑表单弹窗，负责表单校验和 API 提交。
 import { computed } from 'vue'
 import { JccFormModal } from '@jcc/shared/components'
 import { api } from '@/api'
@@ -12,6 +13,7 @@ const props = defineProps({
 const emit = defineEmits(['update:open', 'saved'])
 
 const initialValues = computed(() =>
+  // 编辑时回填完整图书，新增时给出一套干净默认值；JccFormModal 负责按 open 重置表单。
   props.book
     ? {
         isbn: props.book.isbn,
@@ -70,6 +72,7 @@ const rules = {
 }
 
 async function submit(values) {
+  // 弹窗只负责表单形状；ISBN 唯一性和作者复用由后端事务处理。
   const payload = {
     ...values,
     price: Number(values.price) || 0,

@@ -1,3 +1,7 @@
+/**
+ * 文件职责：动态权限与菜单管理接口。
+ */
+
 import { Router } from 'express'
 import { numericId, requestContext } from './helpers.js'
 
@@ -6,6 +10,7 @@ export function createAccessRouter({ services, middleware }) {
   const { requireAuth, requirePermission, requireAnyPermission } = middleware
   router.use(requireAuth)
 
+  // 角色页也需要权限清单，因此读取权限允许 user.manage；写权限只给 permission.manage。
   router.get(
     '/admin/permissions',
     requireAnyPermission(['user.manage', 'permission.manage', 'menu.manage']),

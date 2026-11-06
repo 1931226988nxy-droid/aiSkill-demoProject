@@ -1,3 +1,7 @@
+/**
+ * 文件职责：按当前角色组装工作台指标和提醒。
+ */
+
 import {
   startOfNextShanghaiDate,
   startOfShanghaiDate,
@@ -6,6 +10,7 @@ import {
 
 export function createDashboardService({ db, clock = () => new Date() }) {
   function readerDashboard(user) {
+    // 读者工作台只返回当前读者自己的借阅、预约、未读通知和费用。
     const nowIso = clock().toISOString()
     const today = toShanghaiDateString(clock())
     const readerId = user.readerId || user.reader?.id
@@ -88,6 +93,7 @@ export function createDashboardService({ db, clock = () => new Date() }) {
   }
 
   function staffDashboard(user) {
+    // 馆员/管理员工作台汇总全馆运营指标，并单独给出今日借还和逾期列表。
     const now = clock()
     const today = toShanghaiDateString(now)
     const dayStart = startOfShanghaiDate(today)

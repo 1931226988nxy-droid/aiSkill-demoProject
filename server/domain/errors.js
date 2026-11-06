@@ -1,3 +1,7 @@
+/**
+ * 文件职责：统一业务错误类型与可识别的错误码。
+ */
+
 export class AppError extends Error {
   constructor(code, message, status = 400, details = null) {
     super(message)

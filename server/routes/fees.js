@@ -1,3 +1,7 @@
+/**
+ * 文件职责：费用查询、登记与处理接口。
+ */
+
 import { Router } from 'express'
 import { numericId, requestContext } from './helpers.js'
 
