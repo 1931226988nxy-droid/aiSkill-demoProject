@@ -27,14 +27,14 @@ const clock = () => new Date()
 const services = createServices({ db, clock })
 
 // 任务运行器挂到服务容器上，后台“立即扫描”和定时扫描共用同一实现。
-services.runJobs = () =>
+services.runJobs = () => services.operations.runJobs(() =>
   runAutomatedJobs({
     db,
     circulation: services.circulation,
     settings: services.settings,
     notifications: services.notifications,
     clock,
-  })
+  }))
 
 const jobResult = services.runJobs()
 console.log('[jobs] startup scan:', jobResult)
@@ -79,7 +79,7 @@ const jobTimer = setInterval(() => {
 
 httpServer.listen(config.port, config.host, () => {
   const mode = config.production ? 'production' : 'development'
-  console.log(`图书馆管理系统（${mode}）: http://localhost:${config.port}`)
+  console.log(`图书馆管理系统（${mode}）: http://localhost:${httpServer.address().port}`)
   console.log(`数据库: ${config.dbPath}`)
   if (seedResult.seeded && seedResult.demo) {
     console.log('已写入演示数据：admin/admin123、librarian/lib123456、reader/reader123')
@@ -94,7 +94,13 @@ function shutdown(signal) {
   shuttingDown = true
   console.log(`\n收到 ${signal}，正在关闭服务...`)
   clearInterval(jobTimer)
+  const deadline = setTimeout(() => {
+    console.error('关闭超时，强制退出；未完成请求将由客户端重试。')
+    process.exit(1)
+  }, 10_000)
+  deadline.unref()
   const finish = () => {
+    clearTimeout(deadline)
     try {
       db.close()
     } catch {

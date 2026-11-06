@@ -2,9 +2,33 @@
  * 文件职责：scrypt 密码哈希、会话令牌和读者编号生成。
  */
 
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, scrypt, scryptSync, timingSafeEqual } from 'node:crypto'
+import { promisify } from 'node:util'
+import { AppError } from '../domain/errors.js'
 
 const KEY_LENGTH = 64
+const derive = promisify(scrypt)
+let activeDerivations = 0
+
+async function deriveAsync(value, salt) {
+  if (activeDerivations >= 4) throw new AppError('AUTH_BUSY', '认证服务繁忙，请稍后重试', 503)
+  activeDerivations += 1
+  try { return await derive(value, salt, KEY_LENGTH) }
+  finally { activeDerivations -= 1 }
+}
+
+export async function hashPasswordAsync(password) {
+  const salt = randomBytes(16).toString('hex')
+  return `scrypt$${salt}$${(await deriveAsync(password, salt)).toString('hex')}`
+}
+
+export async function verifyPasswordAsync(password, stored) {
+  const [algorithm, salt, expected] = String(stored || '').split('$')
+  const valid = algorithm === 'scrypt' && /^[a-f0-9]{32}$/i.test(salt || '') && /^[a-f0-9]{128}$/i.test(expected || '')
+  const actual = await deriveAsync(String(password), valid ? salt : '0'.repeat(32))
+  const expectedBuffer = Buffer.from(valid ? expected : '0'.repeat(128), 'hex')
+  return valid && timingSafeEqual(actual, expectedBuffer)
+}
 
 export function hashPassword(password) {
   // 每个密码使用独立随机盐；存储格式：scrypt$salt$hash。

@@ -294,6 +294,9 @@ export function createAdminService({ db, clock = () => new Date(), settings }) {
       db.prepare(
         'UPDATE users SET display_name = ?, role_id = ?, status = ?, updated_at = ? WHERE id = ?',
       ).run(displayName, primaryRole.id, status, now, id)
+      if (status === 'disabled' || rolesChanged) {
+        db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id)
+      }
       // 角色有变化时全量重建 user_roles，保证主角色和角色集合一致。
       if (roleCodesProvided || rolesChanged) {
         db.prepare('DELETE FROM user_roles WHERE user_id = ?').run(id)

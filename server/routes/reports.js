@@ -11,7 +11,7 @@ export function createReportRouter({ services, middleware }) {
   router.use(requireAuth)
 
   router.get('/dashboard', (req, res) => {
-    res.json(services.dashboard.dashboard(req.auth.user))
+    res.json(services.dashboard.dashboard(req.auth.user, req.permissions))
   })
 
   router.get('/reports/summary', requirePermission('report.view'), (req, res) => {

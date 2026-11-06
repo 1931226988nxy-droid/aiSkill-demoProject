@@ -10,11 +10,11 @@ export function createReservationRouter({ services, middleware }) {
   const { requireAuth, requirePermission } = middleware
   router.use(requireAuth)
 
-  router.get('/my/reservations', (req, res) => {
+  router.get('/my/reservations', middleware.requireReaderPermission('reader.reservations.view'), (req, res) => {
     res.json(services.reservations.listMy(req.auth.user, req.query))
   })
 
-  router.post('/reservations', (req, res) => {
+  router.post('/reservations', middleware.requireReaderPermission('reader.reservations.view'), (req, res) => {
     const { actor, ip } = requestContext(req)
     res.status(201).json(services.reservations.create(req.body || {}, actor, ip))
   })
@@ -24,6 +24,9 @@ export function createReservationRouter({ services, middleware }) {
   })
 
   router.post('/reservations/:id/cancel', (req, res) => {
+    if (!req.permissions.includes('reservation.manage')) {
+      middleware.requireReaderPermission('reader.reservations.view')(req, res, () => {})
+    }
     const { actor, ip } = requestContext(req)
     res.json(
       services.reservations.cancel(numericId(req.params.id, '预约编号'), actor, {

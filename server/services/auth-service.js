@@ -7,9 +7,9 @@ import { SESSION_MAX_AGE_SECONDS } from '../domain/constants.js'
 import {
   createReaderNumber,
   createSessionToken,
-  hashPassword,
+  hashPasswordAsync,
   hashSessionToken,
-  verifyPassword,
+  verifyPasswordAsync,
 } from '../lib/passwords.js'
 import {
   optionalEmail,
@@ -71,6 +71,7 @@ export function createAuthService({
   clock = () => new Date(),
   settings,
   notifications = null,
+  sessionIdleSeconds = 30 * 60,
 }) {
   // 组装前端需要的完整会话对象；activeRole 只影响本次会话，不改变用户主角色。
   function bundle(row, activeRoleId = null) {
@@ -144,19 +145,26 @@ export function createAuthService({
     return token
   }
 
-  function resolveSession(token) {
+  function resolveSession(token, { touch = true } = {}) {
     if (!token) return null
     const row = db
       .prepare(`SELECT * FROM sessions WHERE token_hash = ?`)
       .get(hashSessionToken(token))
     if (!row) return null
     // 过期会话立即删除，避免随后每次请求都重复判断。
-    if (new Date(row.expires_at).getTime() <= clock().getTime()) {
+    const now = clock().getTime()
+    if (new Date(row.expires_at).getTime() <= now || now - Date.parse(row.last_seen_at) >= sessionIdleSeconds * 1000) {
       db.prepare('DELETE FROM sessions WHERE id = ?').run(row.id)
       return null
     }
     const user = db.prepare(`${USER_QUERY} WHERE u.id = ?`).get(row.user_id)
-    if (!user || user.status !== 'active') return null
+    if (!user || user.status !== 'active') {
+      db.prepare('DELETE FROM sessions WHERE user_id = ?').run(row.user_id)
+      return null
+    }
+    if (touch && now - Date.parse(row.last_seen_at) >= 60_000) {
+      db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id = ?').run(new Date(now).toISOString(), row.id)
+    }
     const result = bundle(user, row.active_role_id)
     // 读者证被停用但账号还有其他角色时，自动回退到非读者角色，避免把馆员账号一起锁死。
     if (result.user.role.code === 'reader' && result.user.reader?.status !== 'active') {
@@ -175,11 +183,16 @@ export function createAuthService({
     return { ...result, sessionId: row.id }
   }
 
-  function login({ username: rawUsername, password: rawPassword }, { ip = '' } = {}) {
+  async function login({ username: rawUsername, password: rawPassword }, { ip = '' } = {}) {
     const name = requiredString(rawUsername, 'username', '用户名', { min: 3, max: 32 })
-    const pass = requiredString(rawPassword, 'password', '密码', { min: 1, max: 72 })
-    const row = db.prepare(`${USER_QUERY} WHERE u.username = ?`).get(name)
-    if (!row || !verifyPassword(pass, row.password_hash)) {
+    if (typeof rawPassword !== 'string' || !rawPassword.length || rawPassword.length > 72) {
+      throw new AppError(ERR.VALIDATION, '密码长度应为 1-72 个字符', 422)
+    }
+    const candidate = db.prepare(`${USER_QUERY} WHERE u.username = ?`).get(name)
+    const verified = await verifyPasswordAsync(rawPassword, candidate?.password_hash)
+    // 异步计算期间账号、密码或角色可能已被管理员修改，落会话前重新读取。
+    const row = candidate && db.prepare(`${USER_QUERY} WHERE u.id = ?`).get(candidate.id)
+    if (!verified || !row || row.password_hash !== candidate.password_hash) {
       // 登录失败也记录审计，但只记录用户名，不保存密码或明文令牌。
       writeAudit(db, {
         action: 'auth.login',
@@ -223,7 +236,7 @@ export function createAuthService({
     return { token, ...activeBundle }
   }
 
-  function register(input, { ip = '' } = {}) {
+  async function register(input, { ip = '' } = {}) {
     if (!settings.get('allow_registration')) {
       throw new AppError(ERR.FORBIDDEN, '当前未开放读者自助注册，请联系馆员', 403)
     }
@@ -238,9 +251,11 @@ export function createAuthService({
         fields: { phone: '请至少填写手机号或邮箱' },
       })
     }
+    const passwordHash = await hashPasswordAsync(pass)
     try {
-      // 注册必须同时创建 users、user_roles、reader_profiles，任一失败整体回滚。
+      // 哈希在事务外异步计算，避免持有写锁等待 CPU 任务。
       return transaction(db, () => {
+        if (!settings.get('allow_registration')) throw new AppError(ERR.FORBIDDEN, '当前未开放读者自助注册', 403)
         const role = db.prepare("SELECT id FROM roles WHERE code = 'reader'").get()
         if (!role) throw new AppError(ERR.CONFLICT, '读者角色未初始化', 500)
         const now = clock().toISOString()
@@ -249,7 +264,7 @@ export function createAuthService({
             `INSERT INTO users (username, password_hash, display_name, role_id, status, created_at, updated_at)
              VALUES (?, ?, ?, ?, 'active', ?, ?)`,
           )
-          .run(name, hashPassword(pass), displayName, role.id, now, now)
+          .run(name, passwordHash, displayName, role.id, now, now)
         const userId = Number(userResult.lastInsertRowid)
         db.prepare('INSERT INTO user_roles (user_id, role_id, created_at) VALUES (?, ?, ?)').run(
           userId,
@@ -376,25 +391,27 @@ export function createAuthService({
     return { ...getBundle(userId, role.id), activeRole: role }
   }
 
-  function changePassword(userId, { oldPassword, newPassword }, currentSessionId = null) {
+  async function changePassword(userId, { oldPassword, newPassword }, currentSessionId = null) {
     const row = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
     if (!row) throw new AppError(ERR.NOT_FOUND, '用户不存在', 404)
-    if (!verifyPassword(String(oldPassword || ''), row.password_hash)) {
+    if (typeof oldPassword !== 'string' || oldPassword.length > 72 || !await verifyPasswordAsync(oldPassword, row.password_hash)) {
       throw new AppError(ERR.INVALID_CREDENTIALS, '原密码不正确', 400)
     }
     const nextPassword = password(newPassword)
-    db.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?').run(
-      hashPassword(nextPassword),
-      clock().toISOString(),
-      userId,
-    )
-    // 保留当前会话，踢掉该账号的其他会话，降低密码泄露后的持续访问风险。
-    if (currentSessionId) {
-      db.prepare('DELETE FROM sessions WHERE user_id = ? AND id != ?').run(userId, currentSessionId)
-    } else {
-      db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId)
-    }
-    return { changed: true }
+    const passwordHash = await hashPasswordAsync(nextPassword)
+    return transaction(db, () => {
+      const updated = db.prepare("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ? AND password_hash = ? AND status = 'active'").run(
+        passwordHash, clock().toISOString(), userId, row.password_hash,
+      )
+      if (!updated.changes) throw new AppError(ERR.CONFLICT, '账号状态或密码已变化，请重新登录', 409)
+      // 保留当前会话，撤销该账号的其他会话。
+      if (currentSessionId) {
+        db.prepare('DELETE FROM sessions WHERE user_id = ? AND id != ?').run(userId, currentSessionId)
+      } else {
+        db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId)
+      }
+      return { changed: true }
+    })
   }
 
   function logout(token, { ip = '' } = {}) {

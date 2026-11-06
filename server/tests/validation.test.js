@@ -7,7 +7,7 @@ import test from 'node:test'
 import { createTestContext } from './helpers.js'
 
 function staff(context) {
-  return context.services.auth.login({ username: 'librarian', password: 'lib123456' }).user
+  return context.services.auth.getBundle(context.services.db.prepare("SELECT id FROM users WHERE username = 'librarian'").get().id).user
 }
 
 test('ISBN 校验、重复版本号冲突与搜索筛选', () => {
@@ -61,7 +61,7 @@ test('密码以 scrypt 哈希存储，不保存明文', () => {
   }
 })
 
-test('逾期读者不能借书；重复预约和有可借副本时预约被拒绝', () => {
+test('逾期读者不能借书；重复预约和有可借副本时预约被拒绝', async () => {
   const context = createTestContext()
   try {
     const { services } = context
@@ -74,7 +74,7 @@ test('逾期读者不能借书；重复预约和有可借副本时预约被拒�
         ),
       (error) => error.code === 'OVERDUE_BLOCK',
     )
-    const reader1 = services.auth.login({ username: 'reader', password: 'reader123' }).user
+    const reader1 = (await services.auth.login({ username: 'reader', password: 'reader123' })).user
     assert.throws(
       () => services.reservations.create({ bookId: 8 }, reader1),
       (error) => error.code === 'RESERVATION_DUPLICATE',

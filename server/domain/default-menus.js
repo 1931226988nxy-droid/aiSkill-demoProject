@@ -257,7 +257,7 @@ export const DEFAULT_MENU_TREE = [
             path: '/system/access',
             description: '管理权限定义、菜单结构与角色授权',
             sortOrder: 20,
-            permissionCodes: ['permission.manage'],
+            permissionCodes: ['permission.manage', 'menu.manage'],
           },
         ],
       },

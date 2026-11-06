@@ -8,6 +8,7 @@ import express from 'express'
 import { createAuthMiddleware } from './middleware/auth.js'
 import { errorHandler, requestIdMiddleware } from './middleware/error.js'
 import { createApiRouter } from './routes/index.js'
+import { AppError, ERR } from './domain/errors.js'
 
 export function createApp({
   db,
@@ -19,14 +20,26 @@ export function createApp({
 }) {
   const app = express()
   app.disable('x-powered-by')
+  if (config.trustProxy) app.set('trust proxy', config.trustProxy)
   // 请求 ID 必须最先挂载，后续日志和错误响应都依赖它。
   app.use(requestIdMiddleware)
+  app.use(services.operations.middleware({ log: config.production && config.logRequests !== false }))
   app.use((req, res, next) => {
     // API 不返回 HTML，使用一组基础安全头限制嗅探、iframe 和浏览器能力。
     res.setHeader('X-Content-Type-Options', 'nosniff')
     res.setHeader('X-Frame-Options', 'DENY')
     res.setHeader('Referrer-Policy', 'same-origin')
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+    if (config.production) res.setHeader('Strict-Transport-Security', 'max-age=31536000')
+    next()
+  })
+  app.use('/api', (req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store')
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.headers.origin) {
+      let sameOrigin = false
+      try { sameOrigin = new URL(req.headers.origin).host === req.get('host') } catch { /* 拒绝无效 Origin */ }
+      if (!sameOrigin) throw new AppError(ERR.FORBIDDEN, '请求来源不受信任', 403)
+    }
     next()
   })
   app.use(express.json({ limit: '1mb' }))

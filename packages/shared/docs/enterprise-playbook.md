@@ -1,32 +1,20 @@
-# 多项目开发与交付约定
+# 公共库开发与交付
 
-本仓库只维护一份公共源码：`frontend-workspace` 是 `@jcc/shared` 的包根目录。其他本机 Vite 前端项目按根目录 `使用说明.md` 建立链接后，开发时可直接读取源码更新。
+本仓库的公共库源码位于 `packages/shared`，应用与公共包由 npm workspaces、根锁文件和同一提交统一交付。在根目录安装依赖，禁止再链接另一个本机副本作为本项目的修改来源。
 
-## 新项目接入
+## 开发与验证
 
-1. 新项目使用 Vue 3、Ant Design Vue 4 和 Vite；按 `使用说明.md` 链接 `@jcc/shared` 并配置 `jccLiveViteConfig()`。
-2. 将 `docs/project-AGENTS.template.md` 的约定加入新项目自己的 `AGENTS.md`，填写 Java 后端适配、权限、路由和主题差异。
-3. 在应用入口导入 `@jcc/shared/style.css`；按 `docs/API.md` 选用分类导出。
-4. 需要在新开发机使用 Codex skill 时执行 `scripts/install-skill.ps1`。
+1. 通用组件、样式、hooks 与无业务方法在公共包维护；业务字段、路由、权限和接口适配在应用维护。
+2. 公开能力从分类入口导出，更新对应 API 文档和行为测试。
+3. 根目录运行 `npm run quality --workspace=@jcc/shared`，再执行应用质量检查和相关浏览器回归。
+4. 公共 API 不兼容变更需记录迁移方式，并修改同仓应用调用。
 
-目录链接只让能访问同一份源码的开发项目自动刷新。其他电脑需同步本仓库；已部署的应用需要重新构建和部署。公共源码更新时，应说明影响的 API 与使用项目。
+## 跨项目分发
 
-## 提交与验收
+当前包为 `private: true`，本仓库提供可独立克隆的完整源码。不假定其他本机仓库会自动同步；若多个项目需要共用版本，应先确定统一公共库仓库或私有 registry，再配置版本发布与依赖升级。
 
-- 每个公共能力记录公开导出、API 文档和有价值的行为测试。未公开的实现不写入 skill 清单。
-- `npm run quality` 检查格式、skill 清单和公共库测试；各使用项目负责自己的构建与视觉验收。
-- 使用固定指令“同步公共组件库 skill”时运行 `npm run sync:skill`，生成 `frontend-system/references/library-catalog.md`。
-- 在代码托管平台启用 PR 必须通过 `.github/workflows/frontend-quality.yml` 的检查。当前仓库未配置远端，推送后才能运行该流程。
+全局 frontend-system skill 按项目真实依赖定位此目录。此仓库不包含全局 skill 的安装与清单生成脚本；请遵循仓库根目录 AGENTS.md。
 
-## 版本与跨电脑交付
+## 交付
 
-`@jcc/shared` 当前是 `private: true` 的源码包。交付方式是 Git 同步源码与本机链接，无需手工生成单包文件。对公共 API 做不兼容修改时，先记录影响项目与迁移方案，再由各项目的构建检查确认。
-
-如果未来需要跨电脑自动分发稳定版本，可另行配置企业私有 registry 和版本发布流程；这需要代码托管与 registry 地址。生产环境需要经过构建与部署才能获得更新。
-
-## 知识入口
-
-- 视觉与交互：`docs/design-system.md`。
-- 架构与归属：`docs/architecture.md`。
-- 公共 API：`docs/API.md`。
-- Agent 执行规则：根目录 `AGENTS.md`、`frontend-system/SKILL.md` 和各项目自己的 `AGENTS.md`。
+GitHub Actions 使用根目录 `.github/workflows/ci.yml`。本机检查通过后，仍需确认远端 CI 及实际部署结果。生产页面需重新构建部署才能获得公共包更新。

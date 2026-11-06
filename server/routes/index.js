@@ -18,11 +18,18 @@ import { apiNotFound } from '../middleware/error.js'
 
 export function createApiRouter({ services, middleware, config, runJobs }) {
   const router = Router()
-  // attach 对所有 /api 请求执行，登录接口也需要读取可选 Cookie 以做退出/切换。
-  router.use(middleware.attach)
+  // 健康检查不解析 Cookie，数据库故障时仍应准确返回 readiness 状态。
   router.get('/health', (req, res) => {
-    res.json({ status: 'ok', time: new Date().toISOString() })
+    try {
+      services.db.prepare('SELECT 1 AS ready').get()
+      res.json({ status: 'ok', time: new Date().toISOString() })
+    } catch {
+      res.status(503).json({ status: 'unavailable' })
+    }
   })
+  router.get('/health/live', (req, res) => res.json({ status: 'ok' }))
+  // 其余 API（含登录）解析可选会话。
+  router.use(middleware.attach)
   // /auth 内部自行区分公开接口（login/register/options）与需登录接口。
   router.use('/auth', createAuthRouter({ services, middleware, config }))
   // 从这一行起，后续所有业务路由默认必须登录；权限再由各子路由声明。

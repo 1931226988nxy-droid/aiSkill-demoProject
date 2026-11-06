@@ -7,11 +7,11 @@ import test from 'node:test'
 import { createTestContext } from './helpers.js'
 
 function loginStaff(services) {
-  return services.auth.login({ username: 'librarian', password: 'lib123456' }).user
+  return services.auth.getBundle(services.db.prepare("SELECT id FROM users WHERE username = 'librarian'").get().id).user
 }
 
 function loginReader(services, username = 'reader') {
-  return services.auth.login({ username, password: 'reader123' }).user
+  return services.auth.getBundle(services.db.prepare("SELECT id FROM users WHERE username = ?").get(username).id).user
 }
 
 test('借书后副本状态、到期时间和重复借阅校验一致', () => {
@@ -57,12 +57,12 @@ test('归还原书时计算逾期费用并更新副本状态', () => {
   }
 })
 
-test('预约队列在归还后保留副本，且只能由当前预约读者借出', () => {
+test('预约队列在归还后保留副本，且只能由当前预约读者借出', async () => {
   const context = createTestContext()
   try {
     const { services, db } = context
     const staff = loginStaff(services)
-    const admin = services.auth.login({ username: 'admin', password: 'admin123' }).user
+    const admin = (await services.auth.login({ username: 'admin', password: 'admin123' })).user
     const reader1 = loginReader(services)
     const fourth = services.readers.create(
       {

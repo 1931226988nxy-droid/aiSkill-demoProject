@@ -39,6 +39,7 @@ function categoryFields(input, existing = {}) {
 function mapBook(row) {
   return {
     id: row.id,
+    version: row.version,
     isbn: row.isbn,
     title: row.title,
     subtitle: row.subtitle,
@@ -469,16 +470,17 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
   }
 
   function updateBook(bookId, input, actor, ip = '') {
+    const version = integer(input.version, 'version', '数据版本', { min: 1 })
     const existing = getBook(bookId, { includeCopies: false })
     const data = resolveBookInput(db, input, existing)
     const now = clock().toISOString()
     try {
       return transaction(db, () => {
-        db.prepare(
+        const updated = db.prepare(
           `UPDATE books SET isbn = ?, title = ?, subtitle = ?, translator = ?, publisher = ?,
              publish_date = ?, category_id = ?, keywords = ?, summary = ?, cover_url = ?,
-             language = ?, edition = ?, price_cents = ?, updated_by = ?, updated_at = ?
-           WHERE id = ?`,
+             language = ?, edition = ?, price_cents = ?, updated_by = ?, updated_at = ?, version = version + 1
+           WHERE id = ? AND version = ?`,
         ).run(
           data.isbn,
           data.title,
@@ -496,7 +498,9 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
           actor.id,
           now,
           bookId,
+          version,
         )
+        if (!updated.changes) throw new AppError(ERR.CONFLICT, '图书已被其他人修改，请刷新后重新编辑', 409)
         if (input.authors !== undefined) {
           db.prepare('DELETE FROM book_authors WHERE book_id = ?').run(bookId)
           saveAuthors(bookId, data.authors, now)
@@ -539,7 +543,7 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
         throw new AppError(ERR.CONFLICT, '该图书仍有未完成预约，请先处理预约', 409)
       }
       db.prepare(
-        `UPDATE books SET status = 'off_shelf', updated_by = ?, updated_at = ? WHERE id = ?`,
+        `UPDATE books SET status = 'off_shelf', updated_by = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
       ).run(actor.id, now, bookId)
       // 可借/维修中的副本随书下架；已借出、已预约、已遗失的副本保持原状态。
       const closingCopies = db
@@ -628,7 +632,7 @@ export function createCatalogService({ db, clock = () => new Date(), settings, n
           && (original.statusLogId == null || original.statusLogId === copy.status_log_id)
       })
       db.prepare(
-        `UPDATE books SET status = 'active', updated_by = ?, updated_at = ? WHERE id = ?`,
+        `UPDATE books SET status = 'active', updated_by = ?, updated_at = ?, version = version + 1 WHERE id = ?`,
       ).run(actor.id, now, bookId)
       const restoreCopy = db.prepare(
         `UPDATE copies SET status = ?, condition_note = ?, updated_at = ? WHERE id = ?`,

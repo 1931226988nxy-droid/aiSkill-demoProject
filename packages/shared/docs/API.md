@@ -1,6 +1,6 @@
 # @jcc/shared 公共库
 
-本目录以源码形式提供公共组件、样式、状态方法、请求封装、工具方法、验证规则和共享 SVG。本机 Vite 项目可按根目录 `使用说明.md` 使用 `npm link` 链接 `frontend-workspace`。Vue、Ant Design Vue 和图标库是 peer 依赖。
+本目录以源码形式提供公共组件、样式、状态方法、请求封装、工具方法、验证规则和共享 SVG。应用通过仓库根目录 npm workspaces 使用 `packages/shared`，请在根目录安装依赖。Vue、Ant Design Vue 和图标库是 peer 依赖。
 
 应用入口导入 `ant-design-vue/dist/reset.css` 与 `@jcc/shared/style.css`。JS 可从根入口按名称导入，也可从下表中的子路径按类别导入。独立 Vite 项目需将 `@jcc/shared/vite` 的 `jccLiveViteConfig()` 合入自己的配置。
 
@@ -27,4 +27,4 @@ import { isMobileCN } from '@jcc/shared/validators';
 import { documentImageUrl } from '@jcc/shared/assets';
 ```
 
-新增组件或方法需从 `src` 的对应分类入口公开导出，并更新对应 API 文档，然后在 Codex 输入固定指令 `同步公共组件库 skill`。这条指令会检查实际导出并运行 `npm run sync:skill`，把清单写入 `frontend-system/references/library-catalog.md`。
+新增组件或方法需从 `src` 的对应分类入口公开导出，并更新对应 API 文档和行为测试。本仓库不附带全局 skill 的清单生成脚本；以实际源码导出和包内文档为准，修改后在根目录运行 `npm run quality --workspace=@jcc/shared`。

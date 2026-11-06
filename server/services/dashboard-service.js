@@ -190,8 +190,32 @@ export function createDashboardService({ db, clock = () => new Date() }) {
     }
   }
 
-  function dashboard(user) {
-    return user.role.code === 'reader' ? readerDashboard(user) : staffDashboard(user)
+  function dashboard(user, permissions = []) {
+    const can = (code) => permissions.includes(code)
+    const reader = user.role.code === 'reader'
+    const data = reader ? readerDashboard(user) : staffDashboard(user)
+    const access = reader ? {
+      activeLoans: can('reader.loans.view'), overdueLoans: can('reader.loans.view'),
+      activeReservations: can('reader.reservations.view'), pendingFees: can('reader.fees.view'),
+      unreadNotifications: true,
+    } : {
+      todayLoans: can('circulation.manage') || can('report.view'),
+      todayReturns: can('circulation.manage') || can('report.view'),
+      overdueLoans: can('circulation.manage') || can('report.view'),
+      readyReservations: can('reservation.manage') || can('report.view'),
+      availableCopies: can('book.read') || can('copy.manage') || can('report.view'),
+      pendingFees: can('fee.manage') || can('report.view'),
+    }
+    data.stats = data.stats.filter((stat) => access[stat.key])
+    if (reader) {
+      if (!can('reader.loans.view')) data.loans = []
+      if (!can('reader.reservations.view')) data.reservations = []
+    } else {
+      if (!can('report.view')) data.overview = {}
+      if (!can('circulation.manage')) data.alerts.overdue = []
+      if (!can('reservation.manage')) data.alerts.readyReservations = []
+    }
+    return data
   }
 
   return { dashboard }

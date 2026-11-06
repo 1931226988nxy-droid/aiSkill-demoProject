@@ -15,7 +15,9 @@ export function createReaderRouter({ services, middleware }) {
     '/readers/lookup',
     requireAnyPermission(['reader.manage', 'circulation.manage']),
     (req, res) => {
-      const reader = services.circulation.getReaderByNo(req.query.readerNo)
+      const reader = services.circulation.getReaderByNo(req.query.readerNo, {
+        revealSensitive: req.permissions.includes('reader.manage'),
+      })
       if (!reader) throw new AppError(ERR.NOT_FOUND, '读者不存在', 404)
       res.json(reader)
     },

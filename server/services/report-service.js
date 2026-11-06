@@ -161,7 +161,9 @@ export function createReportService({ db, clock = () => new Date() }) {
       ...data.categories.map((item) => [item.name, item.copies, item.available]),
     ]
     const escape = (value) => {
-      const text = String(value ?? '')
+      const raw = String(value ?? '')
+      const text = /^[\s]*[=+@\-＝＋＠－]/u.test(raw) ? `\t${raw}` : raw
+      if (text !== raw) return `"${text.replaceAll('"', '""')}"`
       return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
     }
     return `\ufeff${rows.map((row) => row.map(escape).join(',')).join('\r\n')}`

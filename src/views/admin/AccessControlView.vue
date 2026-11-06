@@ -13,7 +13,7 @@ import { resolveMenuIcon, MENU_ICON_OPTIONS } from '@/menu-icons'
 
 const auth = useAuthStore()
 const router = useRouter()
-const activeTab = ref('permissions')
+const activeTab = ref(auth.can('permission.manage') ? 'permissions' : 'menus')
 const loading = ref(true)
 const permissions = ref([])
 const menus = ref([])
@@ -368,7 +368,7 @@ onMounted(load)
 <template>
   <PagePanel title="权限与菜单">
     <a-tabs v-model:activeKey="activeTab">
-      <a-tab-pane key="permissions" tab="权限管理">
+      <a-tab-pane v-if="auth.can('permission.manage')" key="permissions" tab="权限管理">
         <div class="access-toolbar">
           <a-button type="primary" @click="openCreatePermission">
             <PlusOutlined />新增权限
@@ -426,7 +426,7 @@ onMounted(load)
         </div>
       </a-tab-pane>
 
-      <a-tab-pane key="menus" tab="菜单管理">
+      <a-tab-pane v-if="auth.can('menu.manage')" key="menus" tab="菜单管理">
         <div v-if="auth.can('menu.manage')" class="access-toolbar">
           <a-space wrap>
             <a-button @click="openMenuCreate('module')"><PlusOutlined />新增模块</a-button>

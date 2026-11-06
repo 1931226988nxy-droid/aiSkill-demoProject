@@ -6,12 +6,12 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createTestContext } from './helpers.js'
 
-test('读者管理创建的账号可登录，停用读者证不影响同账号的馆员角色', () => {
+test('读者管理创建的账号可登录，停用读者证不影响同账号的馆员角色', async () => {
   const context = createTestContext()
   try {
     const { services, db } = context
-    const admin = services.auth.login({ username: 'admin', password: 'admin123' }).user
-    const librarian = services.auth.login({ username: 'librarian', password: 'lib123456' }).user
+    const admin = (await services.auth.login({ username: 'admin', password: 'admin123' })).user
+    const librarian = (await services.auth.login({ username: 'librarian', password: 'lib123456' })).user
     const reader = services.readers.create(
       {
         username: 'created_reader',
@@ -21,7 +21,7 @@ test('读者管理创建的账号可登录，停用读者证不影响同账号�
       },
       librarian,
     )
-    const login = services.auth.login({ username: 'created_reader', password: 'reader12345' })
+    const login = (await services.auth.login({ username: 'created_reader', password: 'reader12345' }))
     assert.equal(login.user.role.code, 'reader')
     assert.equal(login.user.readerNo, reader.readerNo)
 
@@ -40,10 +40,10 @@ test('读者管理创建的账号可登录，停用读者证不影响同账号�
     services.readers.setStatus(profile.id, 'disabled', '读者证暂停使用', admin)
     const user = db.prepare('SELECT status FROM users WHERE id = ?').get(combined.id)
     assert.equal(user.status, 'active')
-    const fallbackLogin = services.auth.login({
+    const fallbackLogin = (await services.auth.login({
       username: 'combined_staff',
       password: 'reader12345',
-    })
+    }))
     assert.equal(fallbackLogin.user.role.code, 'librarian')
   } finally {
     context.close()

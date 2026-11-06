@@ -155,7 +155,7 @@ async function handleRoleChange(event) {
       </a-popover>
     </template>
 
-    <RouterView />
+    <RouterView :key="`${auth.user?.id || ''}:${auth.role}`" />
 
     <a-drawer
       v-model:open="mobileNavOpen"

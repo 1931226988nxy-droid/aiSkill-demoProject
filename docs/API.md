@@ -202,6 +202,8 @@
 
 `POST /api/books`、`PATCH /api/books/:id`，需要 `book.manage`。
 
+编辑请求必须携带读取图书时返回的 `version`；保存成功版本递增，旧版本返回 409，不覆盖其他人的修改。
+
 ```json
 {
   "isbn": "9787506365437",
@@ -349,7 +351,7 @@
 
 `action` 为 `settle` 或 `waive`。只有 `pending` 可处理；处理后不可重复操作。系统没有在线支付，不伪造支付成功。
 
-逾期费由任务按 `overdueDays × fine_per_day_cents` 计算，写入 `pending` 费用；管理员线下收款后标记 `settled`，或按制度 `waived`。若在图书归还前结清或豁免，后续新增的逾期天数会生成补充待处理费用。读者有任何未缴费用时，借书校验返回 `PENDING_FEES_BLOCK`。
+逾期费按 `overdueDays × loans.fine_rate_cents` 计算，费率在借出时保存，调价只影响新借阅。旧库迁移采用升级时的费率补齐快照。费用写入 `pending`，线下收款后标记 `settled` 或按制度 `waived`；继续逾期只产生累计应收减去已结算/豁免金额的差额。读者有未缴费用时借书返回 `PENDING_FEES_BLOCK`。
 
 ## 7. 读者
 

@@ -94,7 +94,7 @@ onMounted(load)
     <template #extra>
       <div class="fs-toolbar">
         <div class="jcc-toolbar-actions">
-          <a-button type="primary" @click="router.push('/catalog')">
+          <a-button v-if="auth.can('book.read')" type="primary" @click="router.push('/catalog')">
             <SearchOutlined />
             检索图书
           </a-button>
@@ -124,7 +124,7 @@ onMounted(load)
 
         <template v-if="auth.isReader">
           <div class="two-column workbench-columns">
-            <section class="section-card">
+            <section v-if="auth.can('reader.loans.view')" class="section-card">
               <div class="section-card__header">
                 <div>
                   <div class="section-card__title">当前借阅</div>
@@ -161,7 +161,7 @@ onMounted(load)
             </section>
 
             <div class="page-stack workbench-side">
-              <section class="section-card">
+              <section v-if="auth.can('reader.reservations.view')" class="section-card">
                 <div class="section-card__header">
                   <div class="section-card__title">预约进度</div>
                   <a-button type="link" @click="router.push('/my/reservations')">管理</a-button>
@@ -214,10 +214,10 @@ onMounted(load)
 
         <template v-else>
           <div class="workbench-dashboard">
-            <section class="section-card workbench-dashboard__overdue">
+            <section v-if="auth.can('circulation.manage')" class="section-card workbench-dashboard__overdue">
               <div class="section-card__header">
                 <div class="section-card__title">逾期提醒</div>
-                <a-button type="link" @click="router.push('/staff/fees')">费用处理</a-button>
+                <a-button v-if="auth.can('fee.manage')" type="link" @click="router.push('/staff/fees')">费用处理</a-button>
               </div>
               <div class="section-card__body">
                 <a-empty v-if="!data.alerts?.overdue?.length" description="当前没有逾期借阅" />
@@ -268,7 +268,7 @@ onMounted(load)
               </div>
             </section>
 
-            <section class="section-card workbench-dashboard__reservations">
+            <section v-if="auth.can('reservation.manage')" class="section-card workbench-dashboard__reservations">
               <div class="section-card__header">
                 <div class="section-card__title">预约待取</div>
                 <a-button type="link" @click="router.push('/staff/reservations')">处理</a-button>

@@ -5,10 +5,12 @@
 import { Router } from 'express'
 import { AppError, ERR } from '../domain/errors.js'
 import { clearSessionCookie, sessionCookie } from '../lib/cookies.js'
+import { createAuthProtection } from '../middleware/auth-protection.js'
 
 export function createAuthRouter({ services, middleware, config }) {
   const router = Router()
   const { requireAuth } = middleware
+  const protection = createAuthProtection({ db: services.db, clock: services.clock })
 
   function setCookie(res, token) {
     res.setHeader(
@@ -28,14 +30,15 @@ export function createAuthRouter({ services, middleware, config }) {
     })
   })
 
-  router.post('/login', (req, res) => {
-    const result = services.auth.login(req.body || {}, { ip: req.ip || '' })
+  router.post('/login', protection.login, async (req, res) => {
+    const result = await services.auth.login(req.body || {}, { ip: req.ip || '' })
+    req.clearLoginLimit()
     setCookie(res, result.token)
     res.json({ user: result.user, permissions: result.permissions })
   })
 
-  router.post('/register', (req, res) => {
-    const result = services.auth.register(req.body || {}, { ip: req.ip || '' })
+  router.post('/register', protection.register, async (req, res) => {
+    const result = await services.auth.register(req.body || {}, { ip: req.ip || '' })
     setCookie(res, result.token)
     res.status(201).json({ user: result.user, permissions: result.permissions })
   })
@@ -70,13 +73,13 @@ export function createAuthRouter({ services, middleware, config }) {
     )
   })
 
-  router.post('/password', requireAuth, (req, res) => {
+  router.post('/password', requireAuth, async (req, res) => {
     const { oldPassword, newPassword } = req.body || {}
     if (!oldPassword || !newPassword) {
       throw new AppError(ERR.VALIDATION, '请填写原密码和新密码', 422)
     }
     res.json(
-      services.auth.changePassword(
+      await services.auth.changePassword(
         req.auth.user.id,
         { oldPassword, newPassword },
         req.auth.sessionId,

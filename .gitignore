@@ -8,6 +8,9 @@ dist-ssr/
 
 # Runtime data
 data/
+backups/
+playwright-report/
+test-results/
 
 # Local environment
 .env

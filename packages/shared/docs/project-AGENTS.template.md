@@ -1,6 +1,6 @@
 # 项目开发约定
 
-本项目使用 Vue 3、Ant Design Vue 4、Vite 和 `@jcc/shared`。先读取公共库的 `frontend-workspace/docs/API.md`，按分类子路径导入能力，并在入口导入 `@jcc/shared/style.css`。新增可复用能力回到公共库实现，修改 API 文档和测试后输入“同步公共组件库 skill”。
+本项目使用 Vue 3、Ant Design Vue 4、Vite 和 `@jcc/shared`。按真实依赖位置读取包内 `docs/API.md`，按分类子路径导入能力，并在入口导入 `@jcc/shared/style.css`。本仓库公共库源码是 `packages/shared`，新增可复用能力在该目录实现并更新 API 文档和测试。
 
 ## 本项目需填写
 

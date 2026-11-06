@@ -34,6 +34,7 @@ export function filterAccessibleNavigation(navigation, { resolveRoute, can, isRe
       if (route.name === 'not-found') return null
       if (route.meta?.readerOnly && !isReader) return null
       if (route.meta?.permission && !can(route.meta.permission)) return null
+      if (route.meta?.anyPermissions && !route.meta.anyPermissions.some(can)) return null
       return node
     }
 
@@ -57,6 +58,7 @@ export function forbiddenRecoveryPath(from, { resolveRoute, can, isReader }) {
   if (target.name === 'forbidden' || target.name === 'not-found' || target.meta?.public) return '/'
   if (target.meta?.readerOnly && !isReader) return null
   if (target.meta?.permission && !can(target.meta.permission)) return null
+  if (target.meta?.anyPermissions && !target.meta.anyPermissions.some(can)) return null
   return target.fullPath
 }
 

@@ -28,6 +28,7 @@ const canReserve = computed(
   // 只有读者、图书在架且确实没有可借副本时才显示预约按钮。
   () =>
     auth.isReader &&
+    auth.can('reader.reservations.view') &&
     book.value?.status === 'active' &&
     book.value?.availableCopies === 0 &&
     !reserving.value,

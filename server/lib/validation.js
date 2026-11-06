@@ -56,7 +56,8 @@ export function username(value) {
 }
 
 export function password(value, field = 'password') {
-  const text = String(value || '')
+  if (typeof value !== 'string') invalid(field, '密码必须是字符串')
+  const text = value
   if (text.length < 8) invalid(field, '密码至少需要 8 个字符')
   if (text.length > 72) invalid(field, '密码不能超过 72 个字符')
   return text

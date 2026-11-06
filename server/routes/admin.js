@@ -9,6 +9,9 @@ export function createAdminRouter({ services, middleware, runJobs }) {
   const router = Router()
   const { requireAuth, requirePermission } = middleware
   router.use(requireAuth)
+  router.get('/admin/operations', requirePermission('settings.manage'), (req, res) => {
+    res.json(services.operations.snapshot())
+  })
 
   router.get('/admin/users', requirePermission('user.manage'), (req, res) => {
     res.json(services.admin.listUsers(req.query))

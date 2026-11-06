@@ -251,6 +251,9 @@ export function createReaderService({ db, clock = () => new Date() }) {
         now,
         id,
       )
+      if (next === 'disabled') {
+        db.prepare('DELETE FROM sessions WHERE user_id = ?').run(current.userId)
+      }
       // 只有纯读者账号才同步停用登录账号；馆员+读者双身份不能因读者证停用而失去馆员登录。
       const staffRoles = db
         .prepare(

@@ -211,7 +211,7 @@ const routes = [
         meta: {
           title: '权限与菜单',
           menu: '/system/access',
-          permission: 'permission.manage',
+          anyPermissions: ['permission.manage', 'menu.manage'],
         },
       },
       {
@@ -266,6 +266,9 @@ router.beforeEach(async (to) => {
   }
   // 页面权限是后端权限的前端第一道门；真正的资源校验仍由 API 完成。
   if (to.meta.permission && !auth.can(to.meta.permission)) {
+    return { name: 'forbidden', query: { reason: 'permission', from: to.fullPath } }
+  }
+  if (to.meta.anyPermissions && !to.meta.anyPermissions.some(auth.can)) {
     return { name: 'forbidden', query: { reason: 'permission', from: to.fullPath } }
   }
   return true

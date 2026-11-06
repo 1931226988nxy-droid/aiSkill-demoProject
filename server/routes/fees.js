@@ -10,7 +10,7 @@ export function createFeeRouter({ services, middleware }) {
   const { requireAuth, requirePermission } = middleware
   router.use(requireAuth)
 
-  router.get('/my/fees', (req, res) => {
+  router.get('/my/fees', middleware.requireReaderPermission('reader.fees.view'), (req, res) => {
     res.json(services.fees.listMy(req.auth.user, req.query))
   })
 

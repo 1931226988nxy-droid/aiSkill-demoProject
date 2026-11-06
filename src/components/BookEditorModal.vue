@@ -16,6 +16,7 @@ const initialValues = computed(() =>
   // 编辑时回填完整图书，新增时给出一套干净默认值；JccFormModal 负责按 open 重置表单。
   props.book
     ? {
+        version: props.book.version,
         isbn: props.book.isbn,
         title: props.book.title,
         subtitle: props.book.subtitle,

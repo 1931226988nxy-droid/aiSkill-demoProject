@@ -15,6 +15,7 @@ import { createReaderService } from './reader-service.js'
 import { createReportService } from './report-service.js'
 import { createReservationService } from './reservation-service.js'
 import { createSettingsService } from './settings-service.js'
+import { createOperations } from '../lib/operations.js'
 
 export function createServices({ db, clock = () => new Date(), notificationAdapter = null }) {
   // 装配顺序体现依赖关系：设置/通知是基础服务，认证、馆藏、借阅等再依赖它们。
@@ -33,6 +34,7 @@ export function createServices({ db, clock = () => new Date(), notificationAdapt
   const dashboard = createDashboardService({ db, clock })
   // 服务通过闭包共享同一个 db 和时钟，测试可注入固定时钟来验证时间边界。
   return {
+    operations: createOperations(),
     db,
     clock,
     settings,

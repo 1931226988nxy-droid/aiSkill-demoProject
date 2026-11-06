@@ -8,7 +8,7 @@ import { apiRequest, createTestContext, startTestServer } from './helpers.js'
 import { seedDatabase } from '../db/seed.js'
 
 function staff(context) {
-  return context.services.auth.login({ username: 'librarian', password: 'lib123456' }).user
+  return context.services.auth.getBundle(context.services.db.prepare("SELECT id FROM users WHERE username = 'librarian'").get().id).user
 }
 
 test('新入库可借副本会立即分配给等待队列', () => {
@@ -93,16 +93,16 @@ test('归还后有未缴费用的读者暂不能借新书', () => {
   }
 })
 
-test('过期读者证不能继续预约', () => {
+test('过期读者证不能继续预约', async () => {
   const context = createTestContext()
   try {
     context.services.readers.create({
       username: 'expiredreader', password: 'password123', fullName: '过期读者',
       phone: '13800009999', expiresAt: '2026-10-26',
     }, staff(context))
-    const user = context.services.auth.login({
+    const user = (await context.services.auth.login({
       username: 'expiredreader', password: 'password123',
-    }).user
+    })).user
     assert.throws(
       () => context.services.reservations.create({ bookId: 8 }, user),
       (error) => error.code === 'READER_EXPIRED',
@@ -151,7 +151,7 @@ test('定时任务修复等待预约与可借副本并存的历史状态', () =>
   }
 })
 
-test('普通馆员即使获得账号管理权限也不能提升到管理员权限', () => {
+test('普通馆员即使获得账号管理权限也不能提升到管理员权限', async () => {
   const context = createTestContext()
   try {
     context.db.prepare(`INSERT INTO role_permissions (role_id, permission_id)
@@ -173,7 +173,7 @@ test('普通馆员即使获得账号管理权限也不能提升到管理员权�
     ), (error) => error.code === 'FORBIDDEN')
     const customRole = context.services.admin.createRole({
       code: 'assistant_staff', name: '助理馆员',
-    }, context.services.auth.login({ username: 'admin', password: 'admin123' }).user)
+    }, (await context.services.auth.login({ username: 'admin', password: 'admin123' })).user)
     assert.throws(() => context.services.admin.setRolePermissions(
       customRole.id, ['settings.manage'], actor,
     ), (error) => error.code === 'FORBIDDEN')
@@ -189,7 +189,7 @@ test('普通馆员即使获得账号管理权限也不能提升到管理员权�
   }
 })
 
-test('生产环境空库仅创建独立管理员并关闭自助注册', () => {
+test('生产环境空库仅创建独立管理员并关闭自助注册', async () => {
   const context = createTestContext({ seed: false })
   try {
     assert.throws(() => seedDatabase(context.db, { demo: false }), /INITIAL_ADMIN_PASSWORD/)
@@ -201,9 +201,9 @@ test('生产环境空库仅创建独立管理员并关闭自助注册', () => {
     assert.equal(context.db.prepare('SELECT COUNT(*) AS count FROM users').get().count, 1)
     assert.equal(context.db.prepare('SELECT COUNT(*) AS count FROM books').get().count, 0)
     assert.equal(context.services.settings.get('allow_registration'), false)
-    assert.equal(context.services.auth.login({
+    assert.equal((await context.services.auth.login({
       username: 'firstadmin', password: 'strong-password-123',
-    }).user.role.code, 'admin')
+    })).user.role.code, 'admin')
   } finally {
     context.close()
   }

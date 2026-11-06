@@ -70,7 +70,7 @@ export function createCirculationService({
   settings,
   notifications,
 }) {
-  function getReaderByNo(readerNo) {
+  function getReaderByNo(readerNo, { revealSensitive = false } = {}) {
     const row = db
       .prepare(
         `SELECT rp.*, u.username, u.status AS user_status, u.display_name AS user_display_name
@@ -90,7 +90,7 @@ export function createCirculationService({
       )
       .get(row.id, row.id, nowIso, row.id, row.id)
     return {
-      ...serializeReader(row, { revealSensitive: true }),
+      ...serializeReader(row, { revealSensitive }),
       userId: row.user_id,
       username: row.username,
       userStatus: row.user_status,
@@ -234,8 +234,8 @@ export function createCirculationService({
           .prepare(
             `INSERT INTO loans
               (copy_id, book_id, reader_id, borrowed_by, borrowed_at, due_at, renewals, status,
-               return_condition, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, 0, 'active', '', ?, ?)`,
+               return_condition, created_at, updated_at, fine_rate_cents)
+             VALUES (?, ?, ?, ?, ?, ?, 0, 'active', '', ?, ?, ?)`,
           )
           .run(
             result.copy.id,
@@ -246,6 +246,7 @@ export function createCirculationService({
             result.dueAt,
             nowIso,
             nowIso,
+            settings.get('fine_per_day_cents'),
           )
         const loanId = Number(loanResult.lastInsertRowid)
         // 完成预约借出后关闭对应 ready 预约，避免队列残留。
@@ -308,19 +309,27 @@ export function createCirculationService({
     const row = findActiveLoanByBarcode(barcode)
     if (!row) throw new AppError(ERR.LOAN_NOT_FOUND, '未找到该条码对应的在借记录', 404)
     const days = overdueDays(row.due_at, now)
-    const fine = days * settings.get('fine_per_day_cents')
+    const rate = rateForLoan(row)
+    const fine = days * rate
     return {
       loan: mapLoan(row, now),
       overdueDays: days,
       fine: Number((fine / 100).toFixed(2)),
-      finePerDay: Number((settings.get('fine_per_day_cents') / 100).toFixed(2)),
+      finePerDay: Number((rate / 100).toFixed(2)),
     }
+  }
+
+  function rateForLoan(loan) {
+    if (loan.fine_rate_cents != null) return Number(loan.fine_rate_cents)
+    const rate = settings.get('fine_per_day_cents')
+    db.prepare('UPDATE loans SET fine_rate_cents = ? WHERE id = ? AND fine_rate_cents IS NULL').run(rate, loan.id)
+    return Number(db.prepare('SELECT fine_rate_cents FROM loans WHERE id = ?').get(loan.id).fine_rate_cents)
   }
 
   function syncOverdueFee(loan, now) {
     // 逾期费用按“当前应收总额 - 已结算/已豁免金额”计算，已结清后继续逾期只会产生差额补充费用。
     const days = overdueDays(loan.due_at, now)
-    const rate = settings.get('fine_per_day_cents')
+    const rate = rateForLoan(loan)
     if (days <= 0 || rate <= 0) return null
     const amount = days * rate
     const nowIso = now.toISOString()
@@ -512,6 +521,7 @@ export function createCirculationService({
     const amountCents = moneyToCents(amount ?? 0, 'amount', '遗失赔偿金额')
     const reason = requiredString(note, 'note', '处理说明', { min: 2, max: 300 })
     return transaction(db, () => {
+      syncOverdueFee(row, now)
       db.prepare(
         `UPDATE loans SET returned_at = ?, status = 'returned', return_condition = ?,
            returned_by = ?, updated_at = ? WHERE id = ?`,

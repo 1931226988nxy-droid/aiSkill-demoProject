@@ -10,7 +10,7 @@ export function createCirculationRouter({ services, middleware }) {
   const { requireAuth, requirePermission } = middleware
   router.use(requireAuth)
 
-  router.get('/my/loans', (req, res) => {
+  router.get('/my/loans', middleware.requireReaderPermission('reader.loans.view'), (req, res) => {
     res.json(services.circulation.listMyLoans(req.auth.user, req.query))
   })
 
@@ -37,6 +37,9 @@ export function createCirculationRouter({ services, middleware }) {
   })
 
   router.post('/circulation/loans/:id/renew', (req, res) => {
+    if (!req.permissions.includes('circulation.manage')) {
+      middleware.requireReaderPermission('reader.loans.view')(req, res, () => {})
+    }
     const { actor, ip } = requestContext(req)
     res.json(
       services.circulation.renew(numericId(req.params.id, '借阅编号'), actor, {

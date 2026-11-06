@@ -6,11 +6,11 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { apiRequest, createTestContext, login, startTestServer } from './helpers.js'
 
-test('多角色登录、角色切换和至少一个角色约束', () => {
+test('多角色登录、角色切换和至少一个角色约束', async () => {
   const context = createTestContext()
   try {
     const { services } = context
-    const admin = services.auth.login({ username: 'admin', password: 'admin123' })
+    const admin = (await services.auth.login({ username: 'admin', password: 'admin123' }))
     assert.deepEqual(admin.user.roles.map((role) => role.code).sort(), ['admin', 'librarian'])
     assert.equal(admin.user.role.code, 'admin')
     assert.equal(admin.permissions.includes('permission.manage'), true)
@@ -60,7 +60,7 @@ test('多角色登录、角色切换和至少一个角色约束', () => {
     assert.deepEqual(multi.roles.map((role) => role.code).sort(), ['librarian', 'reader'])
     assert.equal(multi.primaryRoleCode, 'reader')
     assert.ok(readerRole && librarianRole)
-    const multiLogin = services.auth.login({ username: 'multi_role', password: 'reader12345' })
+    const multiLogin = (await services.auth.login({ username: 'multi_role', password: 'reader12345' }))
     assert.equal(multiLogin.user.role.code, 'reader')
     assert.equal(multiLogin.user.readerNo.startsWith('R'), true)
     const multiSession = services.auth.resolveSession(multiLogin.token)
@@ -76,11 +76,11 @@ test('多角色登录、角色切换和至少一个角色约束', () => {
   }
 })
 
-test('动态权限和菜单自动创建权限、按角色过滤导航', () => {
+test('动态权限和菜单自动创建权限、按角色过滤导航', async () => {
   const context = createTestContext()
   try {
     const { services } = context
-    const admin = services.auth.login({ username: 'admin', password: 'admin123' }).user
+    const admin = (await services.auth.login({ username: 'admin', password: 'admin123' })).user
     const createdPermission = services.access.createPermission(
       {
         code: 'archive.inspect',
@@ -136,7 +136,7 @@ test('动态权限和菜单自动创建权限、按角色过滤导航', () => {
         .some((permission) => permission.code === 'archive.auto.created'),
     )
 
-    const reader = services.auth.login({ username: 'reader', password: 'reader123' }).user
+    const reader = (await services.auth.login({ username: 'reader', password: 'reader123' })).user
     const readerRole = services.admin.listRoles().find((role) => role.code === 'reader')
     const currentReaderPermissions = readerRole.permissions
     services.admin.setRolePermissions(
@@ -144,14 +144,14 @@ test('动态权限和菜单自动创建权限、按角色过滤导航', () => {
       [...new Set([...currentReaderPermissions, 'archive.inspect', 'archive.auto.created'])],
       admin,
     )
-    const readerBundle = services.auth.login({ username: 'reader', password: 'reader123' })
+    const readerBundle = (await services.auth.login({ username: 'reader', password: 'reader123' }))
     const readerNav = services.navigation.forPermissions(readerBundle.permissions)
     const archiveModule = readerNav.find((item) => item.code === 'archive')
     assert.ok(archiveModule)
     assert.equal(archiveModule.children[0].title, '档案考评')
     assert.equal(archiveModule.children[0].children[0].title, '档案检查方案')
 
-    const librarianBundle = services.auth.login({ username: 'librarian', password: 'lib123456' })
+    const librarianBundle = (await services.auth.login({ username: 'librarian', password: 'lib123456' }))
     const librarianNav = services.navigation.forPermissions(librarianBundle.permissions)
     assert.equal(librarianNav.some((item) => item.code === 'archive'), false)
   } finally {

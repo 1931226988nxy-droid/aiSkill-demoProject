@@ -4,7 +4,7 @@
 
 import { DEFAULT_SETTINGS, PERMISSIONS, ROLE_DEFINITIONS } from '../domain/constants.js'
 import { DEFAULT_MENU_TREE } from '../domain/default-menus.js'
-import { hashPassword } from '../lib/passwords.js'
+import { hashPassword, verifyPassword } from '../lib/passwords.js'
 import { endOfShanghaiDayAfter } from '../lib/time.js'
 import { transaction } from '../lib/transaction.js'
 import { password, username } from '../lib/validation.js'
@@ -138,12 +138,23 @@ export function seedDatabase(db, {
 } = {}) {
   const now = clock()
   const nowIso = now.toISOString()
+  const mode = db.prepare("SELECT value FROM settings WHERE key = 'database_mode'").get()?.value
+  if (demo && mode === 'production') throw new Error('开发模式禁止连接生产数据库，请使用独立 DB_PATH')
+  if (!demo) {
+    if (mode === 'demo') throw new Error('生产环境禁止使用演示数据库，请设置独立 DB_PATH')
+    for (const [name, pass] of [['admin', 'admin123'], ['librarian', 'lib123456'], ['reader', 'reader123'], ['reader2', 'reader123'], ['reader3', 'reader123']]) {
+      const user = db.prepare('SELECT password_hash FROM users WHERE username = ?').get(name)
+      if (user && verifyPassword(pass, user.password_hash)) throw new Error('数据库含演示账号口令，禁止用于生产')
+    }
+  }
   insertSettings(db, nowIso)
   const permissionIds = syncPermissions(db, nowIso)
   const existing = db.prepare('SELECT COUNT(*) AS count FROM users').get()
   if (Number(existing.count) > 0) {
+    db.prepare(`INSERT OR IGNORE INTO settings (key, value, type, label, description, updated_at)
+      VALUES ('database_mode', ?, 'string', '数据库环境', '内部环境标记', ?)`)
+      .run(demo ? 'demo' : 'production', nowIso)
     // 老库不重灌演示数据，只补齐新增权限和默认菜单。
-    ensureBuiltInReaderPermissions(db, nowIso)
     seedDefaultMenus(db, nowIso)
     return { seeded: false }
   }
@@ -155,8 +166,12 @@ export function seedDatabase(db, {
     username: username(initialAdmin?.username || 'admin'),
     password: password(initialAdmin?.password),
   }
+  if (bootstrapAdmin && bootstrapAdmin.password.length < 12) throw new Error('生产初始管理员密码至少需要 12 个字符')
 
   transaction(db, () => {
+    db.prepare(`INSERT INTO settings (key, value, type, label, description, updated_at)
+      VALUES ('database_mode', ?, 'string', '数据库环境', '内部环境标记', ?)`)
+      .run(demo ? 'demo' : 'production', nowIso)
     if (!demo) {
       db.prepare("UPDATE settings SET value = 'false', updated_at = ? WHERE key = 'allow_registration'")
         .run(nowIso)

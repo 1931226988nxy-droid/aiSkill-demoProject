@@ -92,10 +92,10 @@ test('图书重新上架只恢复随书下架的副本，读者可再次检索',
   }
 })
 
-test('旧下架审计没有副本快照时仍可从状态日志恢复', () => {
+test('旧下架审计没有副本快照时仍可从状态日志恢复', async () => {
   const context = createTestContext()
   try {
-    const actor = context.services.auth.login({ username: 'librarian', password: 'lib123456' }).user
+    const actor = (await context.services.auth.login({ username: 'librarian', password: 'lib123456' })).user
     const book = context.services.catalog.createBook({
       isbn: testIsbn('978000000020'), title: '旧数据恢复测试', authors: ['测试作者'], categoryId: 1,
     }, actor)
